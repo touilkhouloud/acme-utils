@@ -201,13 +201,21 @@ class IIOAcmeProbe():
             iio_ch = self._iio_device.find_channel(channel_dict[channel])
             # Retrieve samples (raw)
             ch_buf_raw = iio_ch.read(self._iio_buffer)
-            # Unpack binary data to signed integer values
-            unpack_str = 'h' * (len(ch_buf_raw) / struct.calcsize('h'))
+            if channel_dict[channel] is not 'timestamp':
+                # Retrieve channel scale
+                scale = float(iio_ch.attrs['scale'].value)
+                # Configure binary data format to unpack (16-bit signed integer)
+                unpack_str = 'h' * (len(ch_buf_raw) / struct.calcsize('h'))
+            else:
+                # No scale attribute on 'timestamp' channel
+                scale = 1.0
+                # Configure binary data format to unpack (64-bit signed integer)
+                unpack_str = 'q' * (len(ch_buf_raw) / struct.calcsize('q'))
+            # Unpack data
             values = struct.unpack(unpack_str, ch_buf_raw)
             self._trace.trace(2, "%u samples read." % len(values))
             self._trace.trace(3, "Samples         : " + str(values))
             # Scale values
-            scale = float(iio_ch.attrs['scale'].value)
             self._trace.trace(3, "Scale: %f" % scale)
             if scale != 1.0:
                 scaled_values = np.asarray(values) * scale
