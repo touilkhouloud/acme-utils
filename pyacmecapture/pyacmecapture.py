@@ -338,7 +338,7 @@ def main():
     for i in range(1, args.count + 1):
         try:
             thread = iioDeviceCaptureThread(i, iio_acme_cape,
-                                            i, ["Vbat", "Ishunt"], args.duration, args.verbose)
+                                            i, ["Time", "Vbat", "Ishunt"], args.duration, args.verbose)
             thread.configure_capture()
             threads.append(thread)
             log(Fore.GREEN, "OK", "Configure capture thread for probe in slot #%u" % i)
@@ -393,6 +393,26 @@ def main():
         p_min = captured_data[i - 1]["P min"] = np.amin(p_samples)
         p_max = captured_data[i - 1]["P max"] = np.amax(p_samples)
         p_avg = captured_data[i - 1]["P avg"] = np.average(p_samples)
+
+        # Make time samples relative to fist sample
+        timestamps = captured_data[i - 1]["Time"]["samples"]
+        first_timestamp = timestamps[0]
+        captured_data[i - 1]["Time"]["samples"] = timestamps - first_timestamp
+        trace.trace(3, "Slot %u timestamps (ms): %s" % (
+            slot, captured_data[i - 1]["Time"]["samples"] / 1000000))
+        if args.verbose >= 2:
+            timestamp_diffs = np.ediff1d(captured_data[i-1]["Time"]["samples"])
+            timestamp_diffs_ms = timestamp_diffs / 1000000
+            trace.trace(3, "Slot %u timestamp_diffs (ms): %s" % (
+                slot, timestamp_diffs_ms))
+            timestamp_diffs_min = np.amin(timestamp_diffs_ms)
+            timestamp_diffs_max = np.amax(timestamp_diffs_ms)
+            timestamp_diffs_avg = np.average(timestamp_diffs_ms)
+            trace.trace(2, "Slot %u Time difference between 2 samples (ms): "
+                           "min=%u max=%u avg=%u" % (slot,
+                                                     timestamp_diffs_min,
+                                                     timestamp_diffs_max,
+                                                     timestamp_diffs_avg))
     log(Fore.GREEN, "OK", "Process samples")
 
     # Save data to file and display report
