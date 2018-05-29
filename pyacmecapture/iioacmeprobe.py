@@ -45,7 +45,7 @@ CHANNEL_DICT = {
 CHANNEL_UNITS = {
     'Vshunt' : 'mV',
     'Vbat' : 'mV',
-    'Time' : 'ms',
+    'Time' : 'ns',
     'Ishunt' : 'mA',
     'Power' : 'mW'}
 
