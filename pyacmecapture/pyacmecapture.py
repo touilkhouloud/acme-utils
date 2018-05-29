@@ -27,12 +27,12 @@ Todo:
 
 
 from __future__ import print_function
+import traceback
 import sys
 import os
 import argparse
 from time import time, localtime, strftime
 from colorama import init, Fore, Style
-import traceback
 import numpy as np
 from mltrace import MLTrace
 from iioacmecape import IIOAcmeCape
@@ -43,7 +43,7 @@ __license__ = "MIT"
 __copyright__ = "Copyright 2018, Baylibre SAS"
 __date__ = "2018/03/01"
 __author__ = "Patrick Titiano"
-__email__ =  "ptitiano@baylibre.com"
+__email__ = "ptitiano@baylibre.com"
 __contact__ = "ptitiano@baylibre.com"
 __maintainer__ = "Patrick Titiano"
 __status__ = "Development"
@@ -88,6 +88,14 @@ def exit_with_error(err):
 
 
 def main():
+    """ Capture power measurements of selected ACME probe(s) over IIO link.
+
+    Please refer to argparse code to learn about available commandline options.
+
+    Returns:
+        int: error code (0 in case of success, a negative value otherwise)
+
+    """
     err = -1
     channels_to_capture = ["Time", "Vbat", "Ishunt"]
 
@@ -107,7 +115,8 @@ def main():
         ''' + sys.argv[0] + ''' --ip baylibre-acme.local --duration 5 -c 2 -n VDD_1,VDD_2
 
     Note it is assumed that slots are populated from slot 1 and upwards, with no hole.''')
-    parser.add_argument('--ip', metavar='HOSTNAME', default='baylibre-acme.local',# add default hostname here
+    parser.add_argument('--ip', metavar='HOSTNAME',
+                        default='baylibre-acme.local',
                         help='ACME hostname (e.g. 192.168.1.2 or baylibre-acme.local)')
     parser.add_argument('--count', '-c', metavar='COUNT', type=int, default=8,
                         help='Number of power rails to capture (> 0))')
@@ -140,8 +149,8 @@ def main():
 
     # Check arguments are valid
     try:
-        assert (args.count <= max_rail_count)
-        assert (args.count > 0)
+        assert args.count <= max_rail_count
+        assert args.count > 0
     except:
         log(Fore.RED, "FAILED", "Check user argument ('count')")
         exit_with_error(err)
@@ -150,13 +159,13 @@ def main():
         if args.names is not None:
             args.names = args.names.split(',')
             trace.trace(2, "args.names: %s" % args.names)
-            assert (args.count == len(args.names))
+            assert args.count == len(args.names)
     except:
         log(Fore.RED, "FAILED", "Check user argument ('names')")
         exit_with_error(err)
 
     try:
-        assert (args.duration > 0)
+        assert args.duration > 0
     except:
         log(Fore.RED, "FAILED", "Check user argument ('duration')")
         exit_with_error(err)
@@ -193,7 +202,7 @@ def main():
     err = err - 1
 
     # Init IIOAcmeCape instance
-    if (iio_acme_cape.init() != True):
+    if iio_acme_cape.init() != True:
         log(Fore.RED, "FAILED", "Init ACME IIO Context")
         exit_with_error(err)
     log(Fore.GREEN, "OK", "Init ACME Cape instance")
@@ -296,7 +305,7 @@ def main():
                 trace.trace(
                     1, "Slot %u: error during %s buffer read!" % (i, ch))
                 failed = True
-                break;
+                break
             slot_dict[ch] = {}
             slot_dict[ch]["samples"] = s["samples"]
             slot_dict[ch]["unit"] = s["unit"]
@@ -382,21 +391,21 @@ def main():
         print(s)
         print(s, file=of_summary)
         s = "  Voltage (%s): min=%d max=%d avg=%d" % (data[i]["Vbat"]["unit"],
-                                                        data[i]["Vbat min"],
-                                                        data[i]["Vbat max"],
-                                                        data[i]["Vbat avg"])
+                                                      data[i]["Vbat min"],
+                                                      data[i]["Vbat max"],
+                                                      data[i]["Vbat avg"])
         print(s)
         print(s, file=of_summary)
         s = "  Current (%s): min=%d max=%d avg=%d" % (data[i]["Ishunt"]["unit"],
-                                                        data[i]["Ishunt min"],
-                                                        data[i]["Ishunt max"],
-                                                        data[i]["Ishunt avg"])
+                                                      data[i]["Ishunt min"],
+                                                      data[i]["Ishunt max"],
+                                                      data[i]["Ishunt avg"])
         print(s)
         print(s, file=of_summary)
         s = "  Power   (%s): min=%d max=%d avg=%d" % (data[i]["Power"]["unit"],
-                                                        data[i]["Power min"],
-                                                        data[i]["Power max"],
-                                                        data[i]["Power avg"])
+                                                      data[i]["Power min"],
+                                                      data[i]["Power max"],
+                                                      data[i]["Power avg"])
         print(s)
         print(s, file=of_summary)
         if i != args.count - 1:
@@ -407,7 +416,7 @@ def main():
     print(s, file=of_summary)
     of_summary.close()
     log(Fore.GREEN, "OK",
-            "Save Power Measurement results to '%s'." % summary_filename)
+        "Save Power Measurement results to '%s'." % summary_filename)
 
     # Save Power Measurement trace to file (CSV format)
     for i in range(args.count):
