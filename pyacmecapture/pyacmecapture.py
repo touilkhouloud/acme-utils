@@ -29,7 +29,6 @@ Todo:
 from __future__ import print_function
 import sys
 import argparse
-import threading
 import time
 from colorama import init, Fore, Style
 import traceback
@@ -85,158 +84,9 @@ def exit_with_error(err):
     exit(err)
 
 
-class iioDeviceCaptureThread(threading.Thread):
-    """ IIO ACME Capture thread
-
-    This class is used to abstract the capture of multiple channels of a single
-    ACME probe / IIO device.
-
-    """
-    def __init__(self, threadid, cape, slot, channels, duration, verbose_level):
-        """ Initialise iioDeviceCaptureThread class
-
-        Args:
-            threadid (int): an ID to identify the thread
-            slot (int): ACME cape slot
-            channels (list of strings): channels to capture
-                        Supported channels: 'Vshunt', 'Vbat', 'Ishunt', 'Power'
-            duration (int): capture duration (in seconds)
-            verbose_level (int): how much verbose the debug trace shall be
-
-        Returns:
-            None
-
-        """
-        threading.Thread.__init__(self)
-        # Init internal variables
-        self._threadid = threadid
-        self._cape = cape
-        self._slot = slot
-        self._channels = channels
-        self._duration = duration
-        self._verbose_level = verbose_level
-        self._trace = MLTrace(verbose_level, "Thread #%u (slot #%u)" % (self._threadid, self._slot))
-        self._trace.trace(2, "Thread params: slot=%u channels=%s duration=%us" % (slot, channels, duration))
-
-
-    def configure_capture(self):
-        """ Configure capture parameters (enable channel(s),
-            configure internal settings, ...)
-
-        Args:
-            None
-
-        Returns:
-            bool: True if successful, False otherwise.
-
-        """
-        # Set oversampling for max perfs (4 otherwise)
-        if self._cape.set_oversampling_ratio(self._slot, 1) is False:
-            self._trace.trace(1, "Failed to set oversampling ratio!")
-            return False
-        self._trace.trace(1, "Oversampling ratio set to 1.")
-
-        # Disable asynchronous reads
-        if self._cape.enable_asynchronous_reads(self._slot, False) is False:
-            self._trace.trace(1, "Failed to configure asynchronous reads!")
-            return False
-        self._trace.trace(1, "Asynchronous reads disabled.")
-
-        # Enable selected channels
-        for ch in self._channels:
-            ret = self._cape.enable_capture_channel(self._slot, ch, True)
-            if ret is False:
-                self._trace.trace(1, "Failed to enable %s capture!" % ch)
-                return False
-            else:
-                self._trace.trace(1, "%s capture enabled." % ch)
-
-        # Allocate capture buffer
-        freq = self._cape.get_sampling_frequency(self._slot)
-        if freq == 0:
-            self._trace.trace(1, "Failed to retrieve sampling frequency!")
-            return False
-        self._trace.trace(1, "Sampling frequency: %uHz" % freq)
-        buffer_size = int(freq / 2) # buffer to store 1/2s of samples
-        self._trace.trace(1, "Buffer size: %u" % buffer_size)
-        if self._cape.allocate_capture_buffer(self._slot, buffer_size) is False:
-            self._trace.trace(1, "Failed to allocate %s capture buffer!" % ch)
-            return False
-        else:
-            self._trace.trace(1, "%s capture buffer allocated." % ch)
-        return True
-
-
-    def run(self):
-        """ Start the capture until iioDeviceCaptureThread.stop() is called.
-
-        Args:
-            None
-
-        Returns:
-            None
-
-        """
-        self._alive = True
-        self._failed = False
-        self._samples = {}
-        for ch in self._channels:
-            self._samples[ch] = None
-            self._samples["slot"] = self._slot
-            self._samples["channels"] = self._channels
-            self._samples["duration"] = self._duration
-        while self._alive:
-            # Capture samples
-            ret = self._cape.refill_capture_buffer(self._slot)
-            if ret != True:
-                self._trace.trace(1, "Warning: error during buffer refill!")
-                self._failed = True
-            # Read captured samples
-            for ch in self._channels:
-                s = self._cape.read_capture_buffer(self._slot, ch)
-                if s is None:
-                    self._trace.trace(1, "Warning: error during %s buffer read!" % ch)
-                    self._failed = True
-                if self._samples[ch] is not None:
-                    self._samples[ch]["samples"] = np.append(self._samples[ch]["samples"], s["samples"])
-                else:
-                    self._samples[ch] = {}
-                    self._samples[ch]["failed"] = False
-                    self._samples[ch]["unit"] = s["unit"]
-                    self._samples[ch]["samples"] = s["samples"]
-                self._trace.trace(3, "self._samples[%s] = %s" % (ch, str(self._samples[ch])))
-        self._samples[ch]["failed"] = self._failed
-        self._trace.trace(1, "Thread done.")
-
-
-    def stop(self):
-        """ Stop the capture and return collected samples.
-
-        Args:
-            None
-
-        Returns:
-            A dictionary (one per channel) containing following key/data:
-                "slot" (int): ACME cape slot
-                "channels" (list of strings): channels captured
-                "duration" (int): capture duration (in seconds)
-                For each captured channel:
-                "capture channel name" (dict): a dictionary containing following key/data:
-                    "failed" (bool): False if successful, True otherwise
-                    "samples" (array): captured samples
-                    "unit" (str): captured samples unit}}
-            E.g:
-                {'slot': 1, 'channels': ['Vbat', 'Ishunt'], 'duration': 3,
-                 'Vbat': {'failed': False, 'samples': array([ 1, 2, 3 ]), 'unit': 'mV'},
-                 'Ishunt': {'failed': False, 'samples': array([4, 5, 6 ]), 'unit': 'mA'}}
-
-        """
-        self._alive = False
-        self.join()
-        return self._samples
-
 def main():
     err = -1
+    channels_to_capture = ["Time", "Vbat", "Ishunt"]
 
     # Print application header
     print(__app_name__ + " (version " + __version__ + ")\n")
@@ -265,7 +115,7 @@ def main():
                         E.g. VDD_BAT,VDD_ARM,...''')
     parser.add_argument('--duration', '-d', metavar='SEC', type=int,
                         default=10, help='Capture duration in seconds (> 0)')
-    parser.add_argument('--verbose', '-v', action='count',
+    parser.add_argument('--verbose', '-v', action='count', default=0,
                         help='print debug traces (various levels v, vv, vvv)')
 
     args = parser.parse_args()
@@ -332,76 +182,110 @@ def main():
         exit_with_error(err)
     err = err - 1
 
-    # Create and configure capture threads
-    threads = []
+    # Configure capture
     failed = False
+    exception_raised = False
     for i in range(1, args.count + 1):
         try:
-            thread = iioDeviceCaptureThread(i, iio_acme_cape,
-                                            i, ["Time", "Vbat", "Ishunt"], args.duration, args.verbose)
-            thread.configure_capture()
-            threads.append(thread)
-            log(Fore.GREEN, "OK", "Configure capture thread for probe in slot #%u" % i)
+            # Set oversampling for max perfs (4 otherwise)
+            if iio_acme_cape.set_oversampling_ratio(i, 1) is False:
+                trace.trace(1, "Slot %u: failed to set oversampling ratio!" % i)
+                failed = True
+                break
+            trace.trace(1, "Slot %u: oversampling ratio set to 1." % i)
+            # Disable asynchronous reads
+            if iio_acme_cape.enable_asynchronous_reads(i, False) is False:
+                trace.trace(1, "Slot %u: failed to configure asynchronous reads!" % i)
+                failed = True
+                break
+            trace.trace(1, "Slot %u: asynchronous reads disabled." % i)
+            # Enable selected channels ("Time", "Vbat", "Ishunt")
+            for ch in channels_to_capture:
+                ret = iio_acme_cape.enable_capture_channel(i, ch, True)
+                if ret is False:
+                    trace.trace(1, "Slot %u: failed to enable %s capture!" % (i, ch))
+                    failed = True
+                    break
+                else:
+                    trace.trace(1, "Slot %u: %s capture enabled." % (i, ch))
+            # Allocate capture buffer
+            freq = iio_acme_cape.get_sampling_frequency(i)
+            if freq == 0:
+                trace.trace(1, "Slot %u: failed to retrieve sampling frequency!" % i)
+                failed = True
+                break
+            trace.trace(1, "Slot %u: sampling frequency: %uHz" % (i, freq))
+            buffer_size = freq * args.duration
+            trace.trace(1, "Slot %u: buffer size: %u" % (i, buffer_size))
+            if iio_acme_cape.allocate_capture_buffer(i, buffer_size) is False:
+                trace.trace(1, "Slot %u: failed to allocate capture buffer!" % i)
+                failed = True
+                break
+            else:
+                trace.trace(1, "Slot %u: capture buffer allocated." % i)
         except:
-            log(Fore.RED, "FAILED", "Configure capture thread for probe in slot #%u" % i)
+            exception_raised = True
+            failed = True
+        log(Fore.GREEN, "OK", "Configure capture for probe in slot #%u" % i)
+    if failed is True:
+        log(Fore.RED, "FAILED", "Configure capture for probe in slot #%u" % i)
+        if exception_raised is True:
             trace.trace(2, traceback.format_exc())
-            exit_with_error(err)
-    err = err - 1
-
-    # Start capture threads
-    try:
-        for thread in threads:
-            thread.start()
-    except:
-        log(Fore.RED, "FAILED", "Start capture")
-        trace.trace(2, traceback.format_exc())
         exit_with_error(err)
-    log(Fore.GREEN, "OK", "Start capture")
     err = err - 1
 
-    # Sleep
-    time.sleep(args.duration)
+    # Refill capture buffers
+    failed = False
+    ts_capture_start = time.time()
+    for i in range(1, args.count + 1):
+        ret = iio_acme_cape.refill_capture_buffer(i)
+        if ret != True:
+            trace.trace(1, "Slot %u: failed to refill buffer!" % i)
+            failed = True
+            break
+    ts_capture_end = time.time()
+    ts_buffer_refill = ts_capture_end - ts_capture_start
+    trace.trace(1, "Time spent refilling buffer: %u" % ts_buffer_refill)
+    if failed is True:
+        log(Fore.RED, "FAILED", "Refill capture buffers")
+        exit_with_error(err)
+    log(Fore.GREEN, "OK", "Refill capture buffers")
+    err = err - 1
 
-    # Stop capture threads an retrieve captured data
-    slot = 0
-    captured_data = []
-    for thread in threads:
-        captured_data.append(thread.stop())
-        trace.trace(3, "Slot %u captured data: %s" % (slot + 1, captured_data[slot]))
-        slot = slot + 1
-    log(Fore.GREEN, "OK", "Stop capture")
+    # Read captured samples
+    data = []
+    failed = False
+    for i in range(1, args.count + 1):
+        slot_dict = {}
+        slot_dict["slot"] = i
+        slot_dict["duration"] = args.duration
+        slot_dict["channels"] = channels_to_capture
+        for ch in channels_to_capture:
+            s = iio_acme_cape.read_capture_buffer(i, ch)
+            if s is None:
+                trace.trace(
+                    1, "Slot %u: error during %s buffer read!" % (i, ch))
+                failed = True
+                break;
+            slot_dict[ch] = {}
+            slot_dict[ch]["samples"] = s["samples"]
+            slot_dict[ch]["unit"] = s["unit"]
+        data.append(slot_dict)
+    trace.trace(3, "Read data: %s" %data)
+    if failed is True:
+        log(Fore.RED, "FAILED", "Read capture buffers")
+        exit_with_error(err)
+    log(Fore.GREEN, "OK", "Read capture buffers")
+    err = err - 1
 
     # Process samples
-    for i in range(1, args.count + 1):
-        slot = captured_data[i - 1]["slot"]
-        vbat_samples = captured_data[i - 1]["Vbat"]["samples"]
-        ishunt_samples = captured_data[i - 1]["Ishunt"]["samples"]
-        # Compute P (P = Vbat * Ishunt)
-        captured_data[i - 1]["P"] = {}
-        captured_data[i - 1]["P"]["unit"] = "uW" # FIXME
-        captured_data[i - 1]["P"]["samples"] = np.multiply(vbat_samples, ishunt_samples)
-        p_samples = captured_data[i - 1]["P"]["samples"]
-        trace.trace(3, "Slot %u power samples: %s" % (slot, p_samples))
-
-        # Compute min, max, avg values for Vbat, Ishunt and P
-        vbat_min = captured_data[i - 1]["Vbat min"] = np.amin(vbat_samples)
-        vbat_max = captured_data[i - 1]["Vbat max"] = np.amax(vbat_samples)
-        vbat_avg = captured_data[i - 1]["Vbat avg"] = np.average(vbat_samples)
-        ishunt_min = captured_data[i - 1]["Ishunt min"] = np.amin(ishunt_samples)
-        ishunt_max = captured_data[i - 1]["Ishunt max"] = np.amax(ishunt_samples)
-        ishunt_avg = captured_data[i - 1]["Ishunt avg"] = np.average(ishunt_samples)
-        p_min = captured_data[i - 1]["P min"] = np.amin(p_samples)
-        p_max = captured_data[i - 1]["P max"] = np.amax(p_samples)
-        p_avg = captured_data[i - 1]["P avg"] = np.average(p_samples)
-
+    for i in range(args.count):
+        slot = i + 1
         # Make time samples relative to fist sample
-        timestamps = captured_data[i - 1]["Time"]["samples"]
-        first_timestamp = timestamps[0]
-        captured_data[i - 1]["Time"]["samples"] = timestamps - first_timestamp
-        trace.trace(3, "Slot %u timestamps (ms): %s" % (
-            slot, captured_data[i - 1]["Time"]["samples"] / 1000000))
+        first_timestamp = data[i]["Time"]["samples"][0]
+        data[i]["Time"]["samples"] -= first_timestamp
         if args.verbose >= 2:
-            timestamp_diffs = np.ediff1d(captured_data[i-1]["Time"]["samples"])
+            timestamp_diffs = np.ediff1d(data[i]["Time"]["samples"])
             timestamp_diffs_ms = timestamp_diffs / 1000000
             trace.trace(3, "Slot %u timestamp_diffs (ms): %s" % (
                 slot, timestamp_diffs_ms))
@@ -413,35 +297,56 @@ def main():
                                                      timestamp_diffs_min,
                                                      timestamp_diffs_max,
                                                      timestamp_diffs_avg))
+            trace.trace(2, "Slot %u Real capture duration: %u ms" % (
+                slot, data[i]["Time"]["samples"][-1] / 1000000))
+
+        # Compute P (P = Vbat * Ishunt)
+        data[i]["Power"] = {}
+        data[i]["Power"]["unit"] = "uW" # FIXME
+        data[i]["Power"]["samples"] = np.multiply(
+            data[i]["Vbat"]["samples"], data[i]["Ishunt"]["samples"])
+        trace.trace(3, "Slot %u power samples: %s" % (
+            slot, data[i]["Power"]["samples"]))
+
+        # Compute min, max, avg values for Vbat, Ishunt and Power
+        data[i]["Vbat min"] = np.amin(data[i]["Vbat"]["samples"])
+        data[i]["Vbat max"] = np.amax(data[i]["Vbat"]["samples"])
+        data[i]["Vbat avg"] = np.average(data[i]["Vbat"]["samples"])
+        data[i]["Ishunt min"] = np.amin(data[i]["Ishunt"]["samples"])
+        data[i]["Ishunt max"] = np.amax(data[i]["Ishunt"]["samples"])
+        data[i]["Ishunt avg"] = np.average(data[i]["Ishunt"]["samples"])
+        data[i]["Power min"] = np.amin(data[i]["Power"]["samples"])
+        data[i]["Power max"] = np.amax(data[i]["Power"]["samples"])
+        data[i]["Power avg"] = np.average(data[i]["Power"]["samples"])
     log(Fore.GREEN, "OK", "Process samples")
 
     # Save data to file and display report
     print("\n------------------ Measurement results ------------------")
     print("Power Rails: %u" % args.count)
     print("Duration: %us" % args.duration)
-    for i in range(1, args.count + 1):
+    for i in range(args.count):
+        slot = i + 1
         if args.names is not None:
-            print("%s (slot %u)" % (args.names[i - 1], i))
+            print("%s (slot %u)" % (args.names[i], slot))
         else:
-            print("Slot %u" % i)
-        vbat_min = captured_data[i - 1]["Vbat min"]
-        vbat_max = captured_data[i - 1]["Vbat max"]
-        vbat_avg = captured_data[i - 1]["Vbat avg"]
-        unit = captured_data[i - 1]["Vbat"]["unit"]
-        print("  Voltage (%s): min=%d max=%d avg=%d" % (unit, vbat_min, vbat_max, vbat_avg))
-        ishunt_min = captured_data[i - 1]["Ishunt min"]
-        ishunt_max = captured_data[i - 1]["Ishunt max"]
-        ishunt_avg = captured_data[i - 1]["Ishunt avg"]
-        unit = captured_data[i - 1]["Ishunt"]["unit"]
-        print("  Current (%s): min=%d max=%d avg=%d" % (unit, ishunt_min, ishunt_max, ishunt_avg))
-        p_min = captured_data[i - 1]["P min"]
-        p_max = captured_data[i - 1]["P max"]
-        p_avg = captured_data[i - 1]["P avg"]
-        unit = captured_data[i - 1]["P"]["unit"]
-        print("  Power   (%s): min=%d max=%d avg=%d" % (unit, p_min, p_max, p_avg))
-        if i != args.count:
+            print("Slot %u" % slot)
+        print("  Voltage (%s): min=%d max=%d avg=%d" % (data[i]["Vbat"]["unit"],
+                                                        data[i]["Vbat min"],
+                                                        data[i]["Vbat max"],
+                                                        data[i]["Vbat avg"]))
+        print("  Current (%s): min=%d max=%d avg=%d" % (data[i]["Ishunt"]["unit"],
+                                                        data[i]["Ishunt min"],
+                                                        data[i]["Ishunt max"],
+                                                        data[i]["Ishunt avg"]))
+        print("  Power   (%s): min=%d max=%d avg=%d" % (data[i]["Power"]["unit"],
+                                                        data[i]["Power min"],
+                                                        data[i]["Power max"],
+                                                        data[i]["Power avg"]))
+        if i != args.count - 1:
             print()
     print("---------------------------------------------------------")
+
+    # Done
     exit_with_error(0)
 
 if __name__ == '__main__':
