@@ -28,8 +28,9 @@ Todo:
 
 from __future__ import print_function
 import sys
+import os
 import argparse
-import time
+from time import time, localtime, strftime
 from colorama import init, Fore, Style
 import traceback
 import numpy as np
@@ -76,9 +77,11 @@ def exit_with_error(err):
 
     """
     if err != 0:
-        print("\nScript execution terminated with error code %d." % err)
+        log(Fore.RED, "FAILED",
+            "Script execution terminated with error code %d." % err)
     else:
-        print("\nScript execution completed with success.")
+        log(Fore.GREEN, "SUCCESS",
+            "Script execution completed with success.")
     print("\n< There will be a 'Segmentation fault (core dumped)' error message after this one. >")
     print("< This is a kwown bug. Please ignore it. >\n")
     exit(err)
@@ -115,6 +118,11 @@ def main():
                         E.g. VDD_BAT,VDD_ARM,...''')
     parser.add_argument('--duration', '-d', metavar='SEC', type=int,
                         default=10, help='Capture duration in seconds (> 0)')
+    parser.add_argument('--outdir', '-od', metavar='OUTPUT DIRECTORY',
+                        default=None,
+                        help='''Output directory (default: $HOME/pyacmecapture/''')
+    parser.add_argument('--out', '-o', metavar='OUTPUT FILE', default=None,
+                        help='''Output file name (default: date (yyyymmdd-hhmmss''')
     parser.add_argument('--verbose', '-v', action='count', default=0,
                         help='print debug traces (various levels v, vv, vvv)')
 
@@ -154,6 +162,28 @@ def main():
         exit_with_error(err)
     err = err - 1
     log(Fore.GREEN, "OK", "Check user arguments")
+
+    # Create output directory (if doesn't exist)
+    prefix = strftime("%Y%m%d-%H%M%S", localtime())
+    if args.outdir is None:
+        outdir = os.path.join(os.path.expanduser('~/pyacmecapture'), prefix)
+    else:
+        outdir = args.outdir
+    trace.trace(1, "Output directory: %s" % outdir)
+    try:
+        os.makedirs(outdir)
+    except OSError as e:
+        if e.errno == os.errno.EEXIST:
+            trace.trace(1, "Directory '%s' already exists." % outdir)
+        else:
+            log(Fore.RED, "FAILED", "Create output directory")
+            trace.trace(2, traceback.format_exc())
+            exit_with_error(err)
+    except:
+        log(Fore.RED, "FAILED", "Create output directory")
+        trace.trace(2, traceback.format_exc())
+        exit_with_error(err)
+    log(Fore.GREEN, "OK", "Create output directory")
 
     # Check ACME Cape is reachable
     if iio_acme_cape.is_up() != True:
@@ -236,14 +266,14 @@ def main():
 
     # Refill capture buffers
     failed = False
-    ts_capture_start = time.time()
+    ts_capture_start = time()
     for i in range(1, args.count + 1):
         ret = iio_acme_cape.refill_capture_buffer(i)
         if ret != True:
             trace.trace(1, "Slot %u: failed to refill buffer!" % i)
             failed = True
             break
-    ts_capture_end = time.time()
+    ts_capture_end = time()
     ts_buffer_refill = ts_capture_end - ts_capture_start
     trace.trace(1, "Time spent refilling buffer: %u" % ts_buffer_refill)
     if failed is True:
@@ -321,30 +351,115 @@ def main():
     log(Fore.GREEN, "OK", "Process samples")
 
     # Save data to file and display report
-    print("\n------------------ Measurement results ------------------")
-    print("Power Rails: %u" % args.count)
-    print("Duration: %us" % args.duration)
+    try:
+        if args.out is None:
+            summary_filename = os.path.join(outdir, prefix + ".txt")
+        else:
+            summary_filename = os.path.join(outdir, args.out + ".txt")
+
+        trace.trace(1, "Summary file: %s" % summary_filename)
+        of_summary = open(summary_filename, 'w')
+    except:
+        log(Fore.RED, "FAILED", "Create output summary file")
+        trace.trace(2, traceback.format_exc())
+        exit_with_error(err)
+    print()
+    s = "------------------ Power Measurement results ------------------"
+    print(s)
+    print(s, file=of_summary)
+    s = "Power Rails: %u" % args.count
+    print(s)
+    print(s, file=of_summary)
+    s = "Duration: %us" % args.duration
+    print(s)
+    print(s, file=of_summary)
     for i in range(args.count):
         slot = i + 1
         if args.names is not None:
-            print("%s (slot %u)" % (args.names[i], slot))
+            s = "%s (slot %u)" % (args.names[i], slot)
         else:
-            print("Slot %u" % slot)
-        print("  Voltage (%s): min=%d max=%d avg=%d" % (data[i]["Vbat"]["unit"],
+            s = "Slot %u" % slot
+        print(s)
+        print(s, file=of_summary)
+        s = "  Voltage (%s): min=%d max=%d avg=%d" % (data[i]["Vbat"]["unit"],
                                                         data[i]["Vbat min"],
                                                         data[i]["Vbat max"],
-                                                        data[i]["Vbat avg"]))
-        print("  Current (%s): min=%d max=%d avg=%d" % (data[i]["Ishunt"]["unit"],
+                                                        data[i]["Vbat avg"])
+        print(s)
+        print(s, file=of_summary)
+        s = "  Current (%s): min=%d max=%d avg=%d" % (data[i]["Ishunt"]["unit"],
                                                         data[i]["Ishunt min"],
                                                         data[i]["Ishunt max"],
-                                                        data[i]["Ishunt avg"]))
-        print("  Power   (%s): min=%d max=%d avg=%d" % (data[i]["Power"]["unit"],
+                                                        data[i]["Ishunt avg"])
+        print(s)
+        print(s, file=of_summary)
+        s = "  Power   (%s): min=%d max=%d avg=%d" % (data[i]["Power"]["unit"],
                                                         data[i]["Power min"],
                                                         data[i]["Power max"],
-                                                        data[i]["Power avg"]))
+                                                        data[i]["Power avg"])
+        print(s)
+        print(s, file=of_summary)
         if i != args.count - 1:
             print()
-    print("---------------------------------------------------------")
+            print("", file=of_summary)
+    s = "---------------------------------------------------------------"
+    print(s + "\n")
+    print(s, file=of_summary)
+    of_summary.close()
+    log(Fore.GREEN, "OK",
+            "Save Power Measurement results to '%s'." % summary_filename)
+
+    # Save Power Measurement trace to file (CSV format)
+    for i in range(args.count):
+        slot = i + 1
+        if args.out is None:
+            trace_filename = prefix
+        else:
+            trace_filename = args.out
+        trace_filename += "_"
+        if args.names is not None:
+            trace_filename += args.names[i]
+        else:
+            trace_filename += "Slot_%u" % slot
+        trace_filename += ".csv"
+        trace_filename = os.path.join(outdir, trace_filename)
+        trace.trace(1, "Trace file: %s" % trace_filename)
+        try:
+            of_trace = open(trace_filename, 'w')
+        except:
+            log(Fore.RED, "FAILED", "Create output trace file")
+            trace.trace(2, traceback.format_exc())
+            exit_with_error(err)
+
+        # Format trace header (name columns)
+        if args.names is not None:
+            s = "Time (%s),%s Voltage (%s),%s Current (%s),%s Power (%s)" % (
+                data[i]["Time"]["unit"],
+                args.names[i], data[i]["Vbat"]["unit"],
+                args.names[i], data[i]["Ishunt"]["unit"],
+                args.names[i], data[i]["Power"]["unit"])
+        else:
+            s = "Time (%s),Slot %u Voltage (%s),Slot %u Current (%s),Slot %u Power (%s)" % (
+                data[i]["Time"]["unit"],
+                slot, data[i]["Vbat"]["unit"],
+                slot, data[i]["Ishunt"]["unit"],
+                slot, data[i]["Power"]["unit"])
+        print(s, file=of_trace)
+        # Save samples in trace file
+        for j in range(len(data[i]["Ishunt"]["samples"])):
+            s = "%s,%s,%s,%s" % (
+                data[i]["Time"]["samples"][j], data[i]["Vbat"]["samples"][j],
+                data[i]["Ishunt"]["samples"][j], data[i]["Power"]["samples"][j])
+            print(s, file=of_trace)
+        of_trace.close()
+        if args.names is not None:
+            log(Fore.GREEN, "OK",
+                "Save %s Power Measurement Trace to '%s'." % (
+                    args.names[i], trace_filename))
+        else:
+            log(Fore.GREEN, "OK",
+                "Save Slot %u Power Measurement Trace to '%s'." % (
+                    slot, trace_filename))
 
     # Done
     exit_with_error(0)
