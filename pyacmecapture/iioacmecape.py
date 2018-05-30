@@ -221,6 +221,27 @@ class IIOAcmeCape():
             self._trace.trace(2, traceback.format_exc())
             return False
 
+    def get_shunt(self, slot):
+        """ Return the shunt resistor value of the probe in selected slot
+
+        Args:
+            slot (int): ACME cape slot, as labelled on the cape (>0)
+
+        Returns:
+            int: shunt resistor value (in micro-ohm) in case of success,
+                 False otherwise.
+
+        """
+        try:
+            return self._slots[slot - 1].get_shunt()
+        except AttributeError:
+            self._trace.trace(1, "No probe in slot %d" % slot)
+            return False
+        except:
+            self._trace.trace(1, "Failed to retrieve shunt value (slot %d)!" % slot)
+            self._trace.trace(2, traceback.format_exc())
+            return False
+
     def allocate_capture_buffer(self, slot, samples_count, cyclic = False):
         # ACME slots are labelled from 1 to 8 on cape, but handle from 0 to 7
         # in SW
