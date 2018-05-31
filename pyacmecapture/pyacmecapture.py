@@ -28,9 +28,10 @@ Todo:
 
 from __future__ import print_function
 import sys
+import os
 import argparse
 import threading
-import time
+from time import sleep, localtime, strftime
 from colorama import init, Fore, Style
 import traceback
 import numpy as np
@@ -49,6 +50,11 @@ __maintainer__ = "Patrick Titiano"
 __status__ = "Development"
 __version__ = "0.1"
 __deprecated__ = False
+
+
+_OVERSAMPLING_RATIO = 1
+_ASYNCHRONOUS_READS = False
+_CAPTURED_CHANNELS = ["Time", "Vbat", "Ishunt"]
 
 
 def log(color, flag, msg):
@@ -131,13 +137,13 @@ class iioDeviceCaptureThread(threading.Thread):
 
         """
         # Set oversampling for max perfs (4 otherwise)
-        if self._cape.set_oversampling_ratio(self._slot, 1) is False:
+        if self._cape.set_oversampling_ratio(self._slot, _OVERSAMPLING_RATIO) is False:
             self._trace.trace(1, "Failed to set oversampling ratio!")
             return False
         self._trace.trace(1, "Oversampling ratio set to 1.")
 
         # Disable asynchronous reads
-        if self._cape.enable_asynchronous_reads(self._slot, False) is False:
+        if self._cape.enable_asynchronous_reads(self._slot, _ASYNCHRONOUS_READS) is False:
             self._trace.trace(1, "Failed to configure asynchronous reads!")
             return False
         self._trace.trace(1, "Asynchronous reads disabled.")
@@ -265,6 +271,11 @@ def main():
                         E.g. VDD_BAT,VDD_ARM,...''')
     parser.add_argument('--duration', '-d', metavar='SEC', type=int,
                         default=10, help='Capture duration in seconds (> 0)')
+    parser.add_argument('--outdir', '-od', metavar='OUTPUT DIRECTORY',
+                        default=None,
+                        help='''Output directory (default: $HOME/pyacmecapture/''')
+    parser.add_argument('--out', '-o', metavar='OUTPUT FILE', default=None,
+                        help='''Output file name (default: date (yyyymmdd-hhmmss''')
     parser.add_argument('--verbose', '-v', action='count',
                         help='print debug traces (various levels v, vv, vvv)')
 
@@ -305,6 +316,28 @@ def main():
     err = err - 1
     log(Fore.GREEN, "OK", "Check user arguments")
 
+    # Create output directory (if doesn't exist)
+    now = strftime("%Y%m%d-%H%M%S", localtime())
+    if args.outdir is None:
+        outdir = os.path.join(os.path.expanduser('~/pyacmecapture'), now)
+    else:
+        outdir = args.outdir
+    trace.trace(1, "Output directory: %s" % outdir)
+    try:
+        os.makedirs(outdir)
+    except OSError as e:
+        if e.errno == os.errno.EEXIST:
+            trace.trace(1, "Directory '%s' already exists." % outdir)
+        else:
+            log(Fore.RED, "FAILED", "Create output directory")
+            trace.trace(2, traceback.format_exc())
+            exit_with_error(err)
+    except:
+        log(Fore.RED, "FAILED", "Create output directory")
+        trace.trace(2, traceback.format_exc())
+        exit_with_error(err)
+    log(Fore.GREEN, "OK", "Create output directory")
+
     # Check ACME Cape is reachable
     if iio_acme_cape.is_up() != True:
         log(Fore.RED, "FAILED", "Ping ACME")
@@ -338,7 +371,7 @@ def main():
     for i in range(1, args.count + 1):
         try:
             thread = iioDeviceCaptureThread(i, iio_acme_cape,
-                                            i, ["Time", "Vbat", "Ishunt"], args.duration, args.verbose)
+                                            i, _CAPTURED_CHANNELS, args.duration, args.verbose)
             thread.configure_capture()
             threads.append(thread)
             log(Fore.GREEN, "OK", "Configure capture thread for probe in slot #%u" % i)
@@ -360,48 +393,25 @@ def main():
     err = err - 1
 
     # Sleep
-    time.sleep(args.duration)
+    sleep(args.duration)
 
     # Stop capture threads an retrieve captured data
     slot = 0
-    captured_data = []
+    data = []
     for thread in threads:
-        captured_data.append(thread.stop())
-        trace.trace(3, "Slot %u captured data: %s" % (slot + 1, captured_data[slot]))
+        data.append(thread.stop())
+        trace.trace(3, "Slot %u captured data: %s" % (slot + 1, data[slot]))
         slot = slot + 1
     log(Fore.GREEN, "OK", "Stop capture")
 
     # Process samples
-    for i in range(1, args.count + 1):
-        slot = captured_data[i - 1]["slot"]
-        vbat_samples = captured_data[i - 1]["Vbat"]["samples"]
-        ishunt_samples = captured_data[i - 1]["Ishunt"]["samples"]
-        # Compute P (P = Vbat * Ishunt)
-        captured_data[i - 1]["P"] = {}
-        captured_data[i - 1]["P"]["unit"] = "uW" # FIXME
-        captured_data[i - 1]["P"]["samples"] = np.multiply(vbat_samples, ishunt_samples)
-        p_samples = captured_data[i - 1]["P"]["samples"]
-        trace.trace(3, "Slot %u power samples: %s" % (slot, p_samples))
-
-        # Compute min, max, avg values for Vbat, Ishunt and P
-        vbat_min = captured_data[i - 1]["Vbat min"] = np.amin(vbat_samples)
-        vbat_max = captured_data[i - 1]["Vbat max"] = np.amax(vbat_samples)
-        vbat_avg = captured_data[i - 1]["Vbat avg"] = np.average(vbat_samples)
-        ishunt_min = captured_data[i - 1]["Ishunt min"] = np.amin(ishunt_samples)
-        ishunt_max = captured_data[i - 1]["Ishunt max"] = np.amax(ishunt_samples)
-        ishunt_avg = captured_data[i - 1]["Ishunt avg"] = np.average(ishunt_samples)
-        p_min = captured_data[i - 1]["P min"] = np.amin(p_samples)
-        p_max = captured_data[i - 1]["P max"] = np.amax(p_samples)
-        p_avg = captured_data[i - 1]["P avg"] = np.average(p_samples)
-
+    for i in range(args.count):
+        slot = i + 1
         # Make time samples relative to fist sample
-        timestamps = captured_data[i - 1]["Time"]["samples"]
-        first_timestamp = timestamps[0]
-        captured_data[i - 1]["Time"]["samples"] = timestamps - first_timestamp
-        trace.trace(3, "Slot %u timestamps (ms): %s" % (
-            slot, captured_data[i - 1]["Time"]["samples"] / 1000000))
+        first_timestamp = data[i]["Time"]["samples"][0]
+        data[i]["Time"]["samples"] -= first_timestamp
         if args.verbose >= 2:
-            timestamp_diffs = np.ediff1d(captured_data[i-1]["Time"]["samples"])
+            timestamp_diffs = np.ediff1d(data[i]["Time"]["samples"])
             timestamp_diffs_ms = timestamp_diffs / 1000000
             trace.trace(3, "Slot %u timestamp_diffs (ms): %s" % (
                 slot, timestamp_diffs_ms))
@@ -413,35 +423,158 @@ def main():
                                                      timestamp_diffs_min,
                                                      timestamp_diffs_max,
                                                      timestamp_diffs_avg))
+            trace.trace(2, "Slot %u Real capture duration: %u ms" % (
+                slot, data[i]["Time"]["samples"][-1] / 1000000))
+
+        # Compute Power (P = Vbat * Ishunt)
+        data[i]["Power"] = {}
+        data[i]["Power"]["unit"] = "uW" # FIXME
+        data[i]["Power"]["samples"] = np.multiply(
+            data[i]["Vbat"]["samples"], data[i]["Ishunt"]["samples"])
+        trace.trace(3, "Slot %u power samples: %s" % (
+            slot, data[i]["Power"]["samples"]))
+
+        # Compute min, max, avg values for Vbat, Ishunt and Power
+        data[i]["Vbat min"] = np.amin(data[i]["Vbat"]["samples"])
+        data[i]["Vbat max"] = np.amax(data[i]["Vbat"]["samples"])
+        data[i]["Vbat avg"] = np.average(data[i]["Vbat"]["samples"])
+        data[i]["Ishunt min"] = np.amin(data[i]["Ishunt"]["samples"])
+        data[i]["Ishunt max"] = np.amax(data[i]["Ishunt"]["samples"])
+        data[i]["Ishunt avg"] = np.average(data[i]["Ishunt"]["samples"])
+        data[i]["Power min"] = np.amin(data[i]["Power"]["samples"])
+        data[i]["Power max"] = np.amax(data[i]["Power"]["samples"])
+        data[i]["Power avg"] = np.average(data[i]["Power"]["samples"])
     log(Fore.GREEN, "OK", "Process samples")
 
     # Save data to file and display report
-    print("\n------------------ Measurement results ------------------")
-    print("Power Rails: %u" % args.count)
-    print("Duration: %us" % args.duration)
-    for i in range(1, args.count + 1):
-        if args.names is not None:
-            print("%s (slot %u)" % (args.names[i - 1], i))
+    try:
+        if args.out is None:
+            summary_filename = os.path.join(outdir, now + "-report.txt")
         else:
-            print("Slot %u" % i)
-        vbat_min = captured_data[i - 1]["Vbat min"]
-        vbat_max = captured_data[i - 1]["Vbat max"]
-        vbat_avg = captured_data[i - 1]["Vbat avg"]
-        unit = captured_data[i - 1]["Vbat"]["unit"]
-        print("  Voltage (%s): min=%d max=%d avg=%d" % (unit, vbat_min, vbat_max, vbat_avg))
-        ishunt_min = captured_data[i - 1]["Ishunt min"]
-        ishunt_max = captured_data[i - 1]["Ishunt max"]
-        ishunt_avg = captured_data[i - 1]["Ishunt avg"]
-        unit = captured_data[i - 1]["Ishunt"]["unit"]
-        print("  Current (%s): min=%d max=%d avg=%d" % (unit, ishunt_min, ishunt_max, ishunt_avg))
-        p_min = captured_data[i - 1]["P min"]
-        p_max = captured_data[i - 1]["P max"]
-        p_avg = captured_data[i - 1]["P avg"]
-        unit = captured_data[i - 1]["P"]["unit"]
-        print("  Power   (%s): min=%d max=%d avg=%d" % (unit, p_min, p_max, p_avg))
-        if i != args.count:
+            summary_filename = os.path.join(outdir, args.out + "-report.txt")
+
+        trace.trace(1, "Summary file: %s" % summary_filename)
+        of_summary = open(summary_filename, 'w')
+    except:
+        log(Fore.RED, "FAILED", "Create output summary file")
+        trace.trace(2, traceback.format_exc())
+        exit_with_error(err)
+    print()
+    s = "------------------ Power Measurement Report ------------------"
+    print(s)
+    print(s, file=of_summary)
+    s = "Date: %s" % now
+    print(s)
+    print(s, file=of_summary)
+    s = "Pyacmecapture version: %s" % __version__
+    print(s)
+    print(s, file=of_summary)
+    s = "Captured Channels: %s" % _CAPTURED_CHANNELS
+    print(s)
+    print(s, file=of_summary)
+    s = "Oversampling ratio: %u" % _OVERSAMPLING_RATIO
+    print(s)
+    print(s, file=of_summary)
+    s = "Asynchronous reads: %s" % _ASYNCHRONOUS_READS
+    print(s)
+    print(s, file=of_summary)
+    s = "Power Rails: %u" % args.count
+    print(s)
+    print(s, file=of_summary)
+    s = "Duration: %us\n" % args.duration
+    print(s)
+    print(s, file=of_summary)
+    for i in range(args.count):
+        slot = i + 1
+        if args.names is not None:
+            s = "%s (slot %u, shunt: %u uohm)" % (
+                args.names[i], slot, iio_acme_cape.get_shunt(slot))
+        else:
+            s = "Slot %u (shunt: %u uohm)" % (
+                slot, iio_acme_cape.get_shunt(slot))
+        print(s)
+        print(s, file=of_summary)
+        s = "  Voltage (%s): min=%d max=%d avg=%d" % (data[i]["Vbat"]["unit"],
+                                                      data[i]["Vbat min"],
+                                                      data[i]["Vbat max"],
+                                                      data[i]["Vbat avg"])
+        print(s)
+        print(s, file=of_summary)
+        s = "  Current (%s): min=%d max=%d avg=%d" % (data[i]["Ishunt"]["unit"],
+                                                      data[i]["Ishunt min"],
+                                                      data[i]["Ishunt max"],
+                                                      data[i]["Ishunt avg"])
+        print(s)
+        print(s, file=of_summary)
+        s = "  Power   (%s): min=%d max=%d avg=%d" % (data[i]["Power"]["unit"],
+                                                      data[i]["Power min"],
+                                                      data[i]["Power max"],
+                                                      data[i]["Power avg"])
+        print(s)
+        print(s, file=of_summary)
+        if i != args.count - 1:
             print()
-    print("---------------------------------------------------------")
+            print("", file=of_summary)
+    s = "---------------------------------------------------------------"
+    print(s + "\n")
+    print(s, file=of_summary)
+    of_summary.close()
+    log(Fore.GREEN, "OK",
+        "Save Power Measurement results to '%s'." % summary_filename)
+
+    # Save Power Measurement trace to file (CSV format)
+    for i in range(args.count):
+        slot = i + 1
+        if args.out is None:
+            trace_filename = now
+        else:
+            trace_filename = args.out
+        trace_filename += "_"
+        if args.names is not None:
+            trace_filename += args.names[i]
+        else:
+            trace_filename += "Slot_%u" % slot
+        trace_filename += ".csv"
+        trace_filename = os.path.join(outdir, trace_filename)
+        trace.trace(1, "Trace file: %s" % trace_filename)
+        try:
+            of_trace = open(trace_filename, 'w')
+        except:
+            log(Fore.RED, "FAILED", "Create output trace file")
+            trace.trace(2, traceback.format_exc())
+            exit_with_error(err)
+
+        # Format trace header (name columns)
+        if args.names is not None:
+            s = "Time (%s),%s Voltage (%s),%s Current (%s),%s Power (%s)" % (
+                data[i]["Time"]["unit"],
+                args.names[i], data[i]["Vbat"]["unit"],
+                args.names[i], data[i]["Ishunt"]["unit"],
+                args.names[i], data[i]["Power"]["unit"])
+        else:
+            s = "Time (%s),Slot %u Voltage (%s),Slot %u Current (%s),Slot %u Power (%s)" % (
+                data[i]["Time"]["unit"],
+                slot, data[i]["Vbat"]["unit"],
+                slot, data[i]["Ishunt"]["unit"],
+                slot, data[i]["Power"]["unit"])
+        print(s, file=of_trace)
+        # Save samples in trace file
+        for j in range(len(data[i]["Ishunt"]["samples"])):
+            s = "%s,%s,%s,%s" % (
+                data[i]["Time"]["samples"][j], data[i]["Vbat"]["samples"][j],
+                data[i]["Ishunt"]["samples"][j], data[i]["Power"]["samples"][j])
+            print(s, file=of_trace)
+        of_trace.close()
+        if args.names is not None:
+            log(Fore.GREEN, "OK",
+                "Save %s Power Measurement Trace to '%s'." % (
+                    args.names[i], trace_filename))
+        else:
+            log(Fore.GREEN, "OK",
+                "Save Slot %u Power Measurement Trace to '%s'." % (
+                    slot, trace_filename))
+
+    # Done
     exit_with_error(0)
 
 if __name__ == '__main__':
