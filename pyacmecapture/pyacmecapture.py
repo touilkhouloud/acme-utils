@@ -33,6 +33,7 @@ import argparse
 import threading
 from time import sleep, localtime, strftime
 from colorama import init, Fore, Style
+from math import ceil
 import traceback
 import numpy as np
 from mltrace import MLTrace
@@ -55,6 +56,7 @@ __deprecated__ = False
 _OVERSAMPLING_RATIO = 1
 _ASYNCHRONOUS_READS = False
 _CAPTURED_CHANNELS = ["Time", "Vbat", "Ishunt"]
+_CAPTURE_BUFFER_SIZE_MSEC = 500
 
 
 def log(color, flag, msg):
@@ -163,8 +165,9 @@ class iioDeviceCaptureThread(threading.Thread):
             self._trace.trace(1, "Failed to retrieve sampling frequency!")
             return False
         self._trace.trace(1, "Sampling frequency: %uHz" % freq)
-        buffer_size = int(freq / 2) # buffer to store 1/2s of samples
-        self._trace.trace(1, "Buffer size: %u" % buffer_size)
+        self._trace.trace(1, "Buffer size in ms: %ums" % _CAPTURE_BUFFER_SIZE_MSEC)
+        buffer_size = int(ceil((freq * _CAPTURE_BUFFER_SIZE_MSEC) / 1000.0))
+        self._trace.trace(1, "Buffer size: %s" % buffer_size)
         if self._cape.allocate_capture_buffer(self._slot, buffer_size) is False:
             self._trace.trace(1, "Failed to allocate %s capture buffer!" % ch)
             return False
