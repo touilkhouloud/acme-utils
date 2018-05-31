@@ -100,11 +100,10 @@ class iioDeviceCaptureThread(threading.Thread):
     ACME probe / IIO device.
 
     """
-    def __init__(self, threadid, cape, slot, channels, duration, verbose_level):
+    def __init__(self, cape, slot, channels, duration, verbose_level):
         """ Initialise iioDeviceCaptureThread class
 
         Args:
-            threadid (int): an ID to identify the thread
             slot (int): ACME cape slot
             channels (list of strings): channels to capture
                         Supported channels: 'Vshunt', 'Vbat', 'Ishunt', 'Power'
@@ -117,14 +116,15 @@ class iioDeviceCaptureThread(threading.Thread):
         """
         threading.Thread.__init__(self)
         # Init internal variables
-        self._threadid = threadid
         self._cape = cape
         self._slot = slot
         self._channels = channels
         self._duration = duration
         self._verbose_level = verbose_level
-        self._trace = MLTrace(verbose_level, "Thread #%u (slot #%u)" % (self._threadid, self._slot))
-        self._trace.trace(2, "Thread params: slot=%u channels=%s duration=%us" % (slot, channels, duration))
+        self._trace = MLTrace(verbose_level, "Thread Slot %u" % self._slot)
+        self._trace.trace(
+            2, "Thread params: slot=%u channels=%s duration=%us" % (
+                slot, channels, duration))
 
 
     def configure_capture(self):
@@ -373,8 +373,8 @@ def main():
     failed = False
     for i in range(1, args.count + 1):
         try:
-            thread = iioDeviceCaptureThread(i, iio_acme_cape,
-                                            i, _CAPTURED_CHANNELS, args.duration, args.verbose)
+            thread = iioDeviceCaptureThread(iio_acme_cape, i,
+                _CAPTURED_CHANNELS, args.duration, args.verbose)
             ret = thread.configure_capture()
         except:
             log(Fore.RED, "FAILED", "Configure capture thread for probe in slot #%u" % i)
