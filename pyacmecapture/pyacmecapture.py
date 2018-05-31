@@ -372,13 +372,16 @@ def main():
         try:
             thread = iioDeviceCaptureThread(i, iio_acme_cape,
                                             i, _CAPTURED_CHANNELS, args.duration, args.verbose)
-            thread.configure_capture()
-            threads.append(thread)
-            log(Fore.GREEN, "OK", "Configure capture thread for probe in slot #%u" % i)
+            ret = thread.configure_capture()
         except:
             log(Fore.RED, "FAILED", "Configure capture thread for probe in slot #%u" % i)
             trace.trace(2, traceback.format_exc())
             exit_with_error(err)
+        if ret is False:
+            log(Fore.RED, "FAILED", "Configure capture thread for probe in slot #%u" % i)
+            exit_with_error(err)
+        threads.append(thread)
+        log(Fore.GREEN, "OK", "Configure capture thread for probe in slot #%u" % i)
     err = err - 1
 
     # Start capture threads
