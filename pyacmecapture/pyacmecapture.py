@@ -31,7 +31,7 @@ import sys
 import os
 import argparse
 import threading
-from time import sleep, localtime, strftime
+from time import time, localtime, strftime
 from colorama import init, Fore, Style
 import traceback
 import numpy as np
@@ -120,6 +120,14 @@ class iioDeviceCaptureThread(threading.Thread):
         self._channels = channels
         self._bufsize = bufsize
         self._duration = duration
+        self._timestamp_thread_start = None
+        self._thread_execution_time = None
+        self._refill_start_times = None
+        self._refill_end_times = None
+        self._read_start_times = None
+        self._read_end_times = None
+        self._failed = None
+        self._samples = None
         self._verbose_level = verbose_level
         self._trace = MLTrace(verbose_level, "Thread Slot %u" % self._slot)
         self._trace.trace(
@@ -166,7 +174,66 @@ class iioDeviceCaptureThread(threading.Thread):
         return True
 
     def run(self):
-        """ Start the capture until iioDeviceCaptureThread.stop() is called.
+        """ Capture samples for the selected duration. Save samples in a
+            dictionary as described in get_samples() docstring.
+
+        Args:
+            None
+
+        Returns:
+            True when operation is completed.
+
+        """
+        self._failed = False
+        self._samples = {}
+        self._refill_start_times = []
+        self._refill_end_times = []
+        self._read_start_times = []
+        self._read_end_times = []
+        for ch in self._channels:
+            self._samples[ch] = None
+            self._samples["slot"] = self._slot
+            self._samples["channels"] = self._channels
+            self._samples["duration"] = self._duration
+
+        self._timestamp_thread_start = time()
+        elapsed_time = 0
+        while elapsed_time < self._duration:
+            # Capture samples
+            self._refill_start_times.append(time())
+            ret = self._cape.refill_capture_buffer(self._slot)
+            self._refill_end_times.append(time())
+            if ret != True:
+                self._trace.trace(1, "Warning: error during buffer refill!")
+                self._failed = True
+            # Read captured samples
+            self._read_start_times.append(time())
+            for ch in self._channels:
+                s = self._cape.read_capture_buffer(self._slot, ch)
+                if s is None:
+                    self._trace.trace(1, "Warning: error during %s buffer read!" % ch)
+                    self._failed = True
+                if self._samples[ch] is not None:
+                    self._samples[ch]["samples"] = np.append(
+                        self._samples[ch]["samples"], s["samples"])
+                else:
+                    self._samples[ch] = {}
+                    self._samples[ch]["failed"] = False
+                    self._samples[ch]["unit"] = s["unit"]
+                    self._samples[ch]["samples"] = s["samples"]
+                self._trace.trace(3, "self._samples[%s] = %s" % (ch, str(self._samples[ch])))
+            self._read_end_times.append(time())
+            elapsed_time = time() - self._timestamp_thread_start
+        self._thread_execution_time = time() - self._timestamp_thread_start
+        self._samples[ch]["failed"] = self._failed
+        self._trace.trace(1, "Thread done.")
+        return True
+
+    def print_runtime_stats(self):
+        """ Print various capture runtime-collected stats.
+            Since printing traces from multiple threads causes mixed and
+            confusing trace, it is preferable to collect data and print it
+            afterwards. For debug purpose only.
 
         Args:
             None
@@ -175,46 +242,90 @@ class iioDeviceCaptureThread(threading.Thread):
             None
 
         """
-        self._alive = True
-        self._failed = False
-        self._samples = {}
-        for ch in self._channels:
-            self._samples[ch] = None
-            self._samples["slot"] = self._slot
-            self._samples["channels"] = self._channels
-            self._samples["duration"] = self._duration
-        while self._alive:
-            # Capture samples
-            ret = self._cape.refill_capture_buffer(self._slot)
-            if ret != True:
-                self._trace.trace(1, "Warning: error during buffer refill!")
-                self._failed = True
-            # Read captured samples
-            for ch in self._channels:
-                s = self._cape.read_capture_buffer(self._slot, ch)
-                if s is None:
-                    self._trace.trace(1, "Warning: error during %s buffer read!" % ch)
-                    self._failed = True
-                if self._samples[ch] is not None:
-                    self._samples[ch]["samples"] = np.append(self._samples[ch]["samples"], s["samples"])
-                else:
-                    self._samples[ch] = {}
-                    self._samples[ch]["failed"] = False
-                    self._samples[ch]["unit"] = s["unit"]
-                    self._samples[ch]["samples"] = s["samples"]
-                self._trace.trace(3, "self._samples[%s] = %s" % (ch, str(self._samples[ch])))
-        self._samples[ch]["failed"] = self._failed
-        self._trace.trace(1, "Thread done.")
+        self._trace.trace(1, "------------- Thread Runtime Stats -------------")
+        self._trace.trace(1, "Thread execution time: %s" % self._thread_execution_time)
+        # Convert list to numpy array
+        self._refill_start_times = np.asarray(self._refill_start_times)
+        self._refill_end_times = np.asarray(self._refill_end_times)
+        self._read_start_times = np.asarray(self._read_start_times)
+        self._read_end_times = np.asarray(self._read_end_times)
+        # Make timestamps relative to first one, and convert to ms
+        first_refill_start_time = self._refill_start_times[0]
+        self._refill_start_times -= first_refill_start_time
+        self._refill_start_times *= 1000
+        self._refill_end_times -= first_refill_start_time
+        self._refill_end_times *= 1000
 
+        first_read_start_time = self._read_start_times[0]
+        self._read_start_times -= first_read_start_time
+        self._read_start_times *= 1000
+        self._read_end_times -= first_read_start_time
+        self._read_end_times *= 1000
+        # Compute refill and read durations
+        refill_durations = np.subtract(
+            self._refill_end_times, self._refill_start_times)
+        read_durations = np.subtract(
+            self._read_end_times, self._read_start_times)
 
-    def stop(self):
-        """ Stop the capture and return collected samples.
+        # Print time each time buffer was getting refilled
+        self._trace.trace(2, "Buffer Refill start times (ms): %s" % self._refill_start_times)
+        self._trace.trace(2, "Buffer Refill end times (ms): %s" % self._refill_end_times)
+        # Print time spent refilling buffer
+        self._trace.trace(2, "Buffer Refill duration (ms): %s" % refill_durations)
+        # Print buffer refill time stats
+        refill_durations_min = np.amin(refill_durations)
+        refill_durations_max = np.amax(refill_durations)
+        refill_durations_avg = np.average(refill_durations)
+        self._trace.trace(1, "Buffer Refill Duration (ms): min=%s max=%s avg=%s" % (
+            refill_durations_min,
+            refill_durations_max,
+            refill_durations_avg))
+        # Print delays between 2 consecutive buffer refills
+        refill_delays = np.ediff1d(self._refill_start_times)
+        self._trace.trace(2, "Delay between 2 Buffer Refill (ms): %s" % refill_delays)
+        # Print buffer refill delay stats
+        refill_delays_min = np.amin(refill_delays)
+        refill_delays_max = np.amax(refill_delays)
+        refill_delays_avg = np.average(refill_delays)
+        self._trace.trace(1, "Buffer Refill Delay (ms): min=%s max=%s avg=%s" % (
+            refill_delays_min,
+            refill_delays_max,
+            refill_delays_avg))
+
+        # Print time each time buffer was getting read
+        self._trace.trace(2, "Buffer Read start times (ms): %s" % self._read_start_times)
+        self._trace.trace(2, "Buffer Read end times (ms): %s" % self._read_end_times)
+        # Print time spent reading buffer
+        self._trace.trace(2, "Buffer Read duration (ms): %s" % read_durations)
+        # Print buffer read time stats
+        read_durations_min = np.amin(read_durations)
+        read_durations_max = np.amax(read_durations)
+        read_durations_avg = np.average(read_durations)
+        self._trace.trace(1, "Buffer Read Duration (ms): min=%s max=%s avg=%s" % (
+            read_durations_min,
+            read_durations_max,
+            read_durations_avg))
+        # Print delays between 2 consecutive buffer reads
+        read_delays = np.ediff1d(self._read_start_times)
+        self._trace.trace(2, "Delay between 2 Buffer Read (ms): %s" % read_delays)
+        # Print buffer read delay stats
+        read_delays_min = np.amin(read_delays)
+        read_delays_max = np.amax(read_delays)
+        read_delays_avg = np.average(read_delays)
+        self._trace.trace(1, "Buffer Read Delay (ms): min=%s max=%s avg=%s" % (
+            read_delays_min,
+            read_delays_max,
+            read_delays_avg))
+        self._trace.trace(1, "------------------------------------------------")
+
+    def get_samples(self):
+        """ Return collected samples. To be called once thread completed.
 
         Args:
             None
 
         Returns:
-            A dictionary (one per channel) containing following key/data:
+            dict: a dictionary (one per channel) containing following key/data:
                 "slot" (int): ACME cape slot
                 "channels" (list of strings): channels captured
                 "duration" (int): capture duration (in seconds)
@@ -229,8 +340,6 @@ class iioDeviceCaptureThread(threading.Thread):
                  'Ishunt': {'failed': False, 'samples': array([4, 5, 6 ]), 'unit': 'mA'}}
 
         """
-        self._alive = False
-        self.join()
         return self._samples
 
 def main():
@@ -389,39 +498,51 @@ def main():
     log(Fore.GREEN, "OK", "Start capture")
     err = err - 1
 
-    # Sleep
-    sleep(args.duration)
+    # Wait for capture threads to complete
+    for thread in threads:
+        thread.join()
+    log(Fore.GREEN, "OK", "Capture threads completed")
 
-    # Stop capture threads an retrieve captured data
+    if args.verbose >=1:
+        for thread in threads:
+            thread.print_runtime_stats()
+
+    # Retrieve captured data
     slot = 0
     data = []
     for thread in threads:
-        data.append(thread.stop())
+        data.append(thread.get_samples())
         trace.trace(3, "Slot %u captured data: %s" % (slot + 1, data[slot]))
         slot = slot + 1
-    log(Fore.GREEN, "OK", "Stop capture")
+    log(Fore.GREEN, "OK", "Retrieve captured samples")
 
     # Process samples
     for i in range(args.count):
         slot = i + 1
+
         # Make time samples relative to fist sample
         first_timestamp = data[i]["Time"]["samples"][0]
         data[i]["Time"]["samples"] -= first_timestamp
-        if args.verbose >= 2:
-            timestamp_diffs = np.ediff1d(data[i]["Time"]["samples"])
-            timestamp_diffs_ms = timestamp_diffs / 1000000
-            trace.trace(3, "Slot %u timestamp_diffs (ms): %s" % (
-                slot, timestamp_diffs_ms))
-            timestamp_diffs_min = np.amin(timestamp_diffs_ms)
-            timestamp_diffs_max = np.amax(timestamp_diffs_ms)
-            timestamp_diffs_avg = np.average(timestamp_diffs_ms)
-            trace.trace(2, "Slot %u Time difference between 2 samples (ms): "
-                           "min=%u max=%u avg=%u" % (slot,
-                                                     timestamp_diffs_min,
-                                                     timestamp_diffs_max,
-                                                     timestamp_diffs_avg))
-            trace.trace(2, "Slot %u Real capture duration: %u ms" % (
-                slot, data[i]["Time"]["samples"][-1] / 1000000))
+        timestamp_diffs = np.ediff1d(data[i]["Time"]["samples"])
+        timestamp_diffs_ms = timestamp_diffs / 1000000
+        trace.trace(3, "Slot %u timestamp_diffs (ms): %s" % (
+            slot, timestamp_diffs_ms))
+        timestamp_diffs_min = np.amin(timestamp_diffs_ms)
+        timestamp_diffs_max = np.amax(timestamp_diffs_ms)
+        timestamp_diffs_avg = np.average(timestamp_diffs_ms)
+        trace.trace(1, "Slot %u Time difference between 2 samples (ms): "
+                       "min=%u max=%u avg=%u" % (slot,
+                                                 timestamp_diffs_min,
+                                                 timestamp_diffs_max,
+                                                 timestamp_diffs_avg))
+        real_capture_time_ms = data[i]["Time"]["samples"][-1] / 1000000
+        sample_count = len(data[i]["Time"]["samples"])
+        real_sampling_rate = sample_count / (real_capture_time_ms / 1000)
+        trace.trace(1,
+            "Slot %u: real capture duration: %u ms (%u samples)" % (
+                slot, real_capture_time_ms, sample_count))
+        trace.trace(1, "Slot %u: real sampling rate: %u Hz" % (
+            slot, real_sampling_rate))
 
         # Compute Power (P = Vbat * Ishunt)
         data[i]["Power"] = {}
