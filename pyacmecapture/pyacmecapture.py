@@ -602,7 +602,7 @@ def main():
         trace.trace(2, traceback.format_exc())
         exit_with_error(err)
     print()
-    s = "------------------ Power Measurement Report ------------------"
+    s = "---------------------------- Power Measurement Report -----------------------------"
     print(s)
     print(s, file=of_summary)
     s = "Date: %s" % now
@@ -626,38 +626,42 @@ def main():
     s = "Duration: %us\n" % args.duration
     print(s)
     print(s, file=of_summary)
-    for i in range(args.count):
-        slot = i + 1
-        if args.names is not None:
-            s = "%s (slot %u, shunt: %u uohm)" % (
-                args.names[i], slot, iio_acme_cape.get_shunt(slot))
-        else:
-            s = "Slot %u (shunt: %u uohm)" % (
-                slot, iio_acme_cape.get_shunt(slot))
+
+    table = {}
+    table['rows'] = ['Slot', 'Shunt (mohm)',
+        'Voltage', ' Min (mV)', ' Max (mV)', ' Avg (mV)',
+        'Current', ' Min (mA)', ' Max (mA)', ' Avg (mA)',
+        'Power', ' Min (mW)', ' Max (mW)', ' Avg (mW)']
+    table['data_keys'] = {}
+    table['data_keys']['Voltage'] = None
+    table['data_keys'][' Min (mV)'] = 'Vbat min'
+    table['data_keys'][' Max (mV)'] = 'Vbat max'
+    table['data_keys'][' Avg (mV)'] = 'Vbat avg'
+    table['data_keys']['Current'] = None
+    table['data_keys'][' Min (mA)'] = 'Ishunt min'
+    table['data_keys'][' Max (mA)'] = 'Ishunt max'
+    table['data_keys'][' Avg (mA)'] = 'Ishunt avg'
+    table['data_keys']['Power'] = None
+    table['data_keys'][' Min (mW)'] = 'Power min'
+    table['data_keys'][' Max (mW)'] = 'Power max'
+    table['data_keys'][' Avg (mW)'] = 'Power avg'
+
+    for r in table['rows']:
+        s = r.ljust(13)
+        for i in range(args.count):
+            slot = i + 1
+            if r is 'Slot':
+                if args.names is not None:
+                    s += args.names[i].ljust(9)
+                else:
+                    s += str(slot).ljust(9)
+            elif r is 'Shunt (mohm)':
+                s += str(iio_acme_cape.get_shunt(slot) / 1000).ljust(9)
+            elif table['data_keys'][r] is not None:
+                s += format(data[i][table['data_keys'][r]], '.1f').ljust(9)
         print(s)
         print(s, file=of_summary)
-        s = "  Voltage (%s): min=%d max=%d avg=%d" % (data[i]["Vbat"]["unit"],
-                                                      data[i]["Vbat min"],
-                                                      data[i]["Vbat max"],
-                                                      data[i]["Vbat avg"])
-        print(s)
-        print(s, file=of_summary)
-        s = "  Current (%s): min=%d max=%d avg=%d" % (data[i]["Ishunt"]["unit"],
-                                                      data[i]["Ishunt min"],
-                                                      data[i]["Ishunt max"],
-                                                      data[i]["Ishunt avg"])
-        print(s)
-        print(s, file=of_summary)
-        s = "  Power   (%s): min=%d max=%d avg=%d" % (data[i]["Power"]["unit"],
-                                                      data[i]["Power min"],
-                                                      data[i]["Power max"],
-                                                      data[i]["Power avg"])
-        print(s)
-        print(s, file=of_summary)
-        if i != args.count - 1:
-            print()
-            print("", file=of_summary)
-    s = "---------------------------------------------------------------"
+    s = "-----------------------------------------------------------------------------------"
     print(s + "\n")
     print(s, file=of_summary)
     of_summary.close()
