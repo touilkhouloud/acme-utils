@@ -83,9 +83,11 @@ def exit_with_error(err):
 
     """
     if err != 0:
-        print("\nScript execution terminated with error code %d." % err)
+        log(Fore.RED,
+            "FAILED", "Script execution terminated with error code %d." % err)
     else:
-        print("\nScript execution completed with success.")
+        log(Fore.GREEN,
+            "SUCCESS", "Script execution completed with success.")
     print("\n< There will be a 'Segmentation fault (core dumped)' error message after this one. >")
     print("< This is a kwown bug. Please ignore it. >\n")
     exit(err)
