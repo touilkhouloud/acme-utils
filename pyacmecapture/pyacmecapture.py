@@ -569,9 +569,10 @@ def main():
 
         # Compute Power (P = Vbat * Ishunt)
         data[i]["Power"] = {}
-        data[i]["Power"]["unit"] = "uW" # FIXME
+        data[i]["Power"]["unit"] = "mW" # FIXME
         data[i]["Power"]["samples"] = np.multiply(
             data[i]["Vbat"]["samples"], data[i]["Ishunt"]["samples"])
+        data[i]["Power"]["samples"] /= 1000.0
         trace.trace(3, "Slot %u power samples: %s" % (
             slot, data[i]["Power"]["samples"]))
 
