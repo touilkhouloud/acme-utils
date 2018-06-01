@@ -33,7 +33,6 @@ import argparse
 import threading
 from time import sleep, localtime, strftime
 from colorama import init, Fore, Style
-from math import ceil
 import traceback
 import numpy as np
 from mltrace import MLTrace
@@ -56,7 +55,6 @@ __deprecated__ = False
 _OVERSAMPLING_RATIO = 1
 _ASYNCHRONOUS_READS = False
 _CAPTURED_CHANNELS = ["Time", "Vbat", "Ishunt"]
-_CAPTURE_BUFFER_SIZE_MSEC = 500
 
 
 def log(color, flag, msg):
@@ -100,13 +98,14 @@ class iioDeviceCaptureThread(threading.Thread):
     ACME probe / IIO device.
 
     """
-    def __init__(self, cape, slot, channels, duration, verbose_level):
+    def __init__(self, cape, slot, channels, bufsize, duration, verbose_level):
         """ Initialise iioDeviceCaptureThread class
 
         Args:
             slot (int): ACME cape slot
             channels (list of strings): channels to capture
                         Supported channels: 'Vshunt', 'Vbat', 'Ishunt', 'Power'
+            bufsize (int): capture buffer size (in samples)
             duration (int): capture duration (in seconds)
             verbose_level (int): how much verbose the debug trace shall be
 
@@ -119,13 +118,13 @@ class iioDeviceCaptureThread(threading.Thread):
         self._cape = cape
         self._slot = slot
         self._channels = channels
+        self._bufsize = bufsize
         self._duration = duration
         self._verbose_level = verbose_level
         self._trace = MLTrace(verbose_level, "Thread Slot %u" % self._slot)
         self._trace.trace(
-            2, "Thread params: slot=%u channels=%s duration=%us" % (
-                slot, channels, duration))
-
+            2, "Thread params: slot=%u channels=%s buffer size=%u duration=%us" % (
+                self._slot, self._channels, self._bufsize, self._duration))
 
     def configure_capture(self):
         """ Configure capture parameters (enable channel(s),
@@ -160,21 +159,11 @@ class iioDeviceCaptureThread(threading.Thread):
                 self._trace.trace(1, "%s capture enabled." % ch)
 
         # Allocate capture buffer
-        freq = self._cape.get_sampling_frequency(self._slot)
-        if freq == 0:
-            self._trace.trace(1, "Failed to retrieve sampling frequency!")
-            return False
-        self._trace.trace(1, "Sampling frequency: %uHz" % freq)
-        self._trace.trace(1, "Buffer size in ms: %ums" % _CAPTURE_BUFFER_SIZE_MSEC)
-        buffer_size = int(ceil((freq * _CAPTURE_BUFFER_SIZE_MSEC) / 1000.0))
-        self._trace.trace(1, "Buffer size: %s" % buffer_size)
-        if self._cape.allocate_capture_buffer(self._slot, buffer_size) is False:
+        if self._cape.allocate_capture_buffer(self._slot, self._bufsize) is False:
             self._trace.trace(1, "Failed to allocate %s capture buffer!" % ch)
             return False
-        else:
-            self._trace.trace(1, "%s capture buffer allocated." % ch)
+        self._trace.trace(1, "%s capture buffer allocated." % ch)
         return True
-
 
     def run(self):
         """ Start the capture until iioDeviceCaptureThread.stop() is called.
@@ -274,6 +263,8 @@ def main():
                         E.g. VDD_BAT,VDD_ARM,...''')
     parser.add_argument('--duration', '-d', metavar='SEC', type=int,
                         default=10, help='Capture duration in seconds (> 0)')
+    parser.add_argument('--bufsize', '-b', metavar='BUFFER SIZE', type=int,
+                        default=127, help='Capture duration in seconds (> 0)')
     parser.add_argument('--outdir', '-od', metavar='OUTPUT DIRECTORY',
                         default=None,
                         help='''Output directory (default: $HOME/pyacmecapture/''')
@@ -374,7 +365,7 @@ def main():
     for i in range(1, args.count + 1):
         try:
             thread = iioDeviceCaptureThread(iio_acme_cape, i,
-                _CAPTURED_CHANNELS, args.duration, args.verbose)
+                _CAPTURED_CHANNELS, args.bufsize, args.duration, args.verbose)
             ret = thread.configure_capture()
         except:
             log(Fore.RED, "FAILED", "Configure capture thread for probe in slot #%u" % i)
