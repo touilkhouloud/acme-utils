@@ -168,9 +168,9 @@ class iioDeviceCaptureThread(threading.Thread):
 
         # Allocate capture buffer
         if self._cape.allocate_capture_buffer(self._slot, self._bufsize) is False:
-            self._trace.trace(1, "Failed to allocate %s capture buffer!" % ch)
+            self._trace.trace(1, "Failed to allocate capture buffer!")
             return False
-        self._trace.trace(1, "%s capture buffer allocated." % ch)
+        self._trace.trace(1, "Capture buffer allocated.")
         return True
 
     def run(self):
