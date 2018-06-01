@@ -27,13 +27,13 @@ Todo:
 
 
 from __future__ import print_function
+import traceback
 import sys
 import os
 import argparse
 import threading
 from time import time, localtime, strftime
 from colorama import init, Fore, Style
-import traceback
 import numpy as np
 from mltrace import MLTrace
 from iioacmecape import IIOAcmeCape
@@ -44,7 +44,7 @@ __license__ = "MIT"
 __copyright__ = "Copyright 2018, Baylibre SAS"
 __date__ = "2018/03/01"
 __author__ = "Patrick Titiano"
-__email__ =  "ptitiano@baylibre.com"
+__email__ = "ptitiano@baylibre.com"
 __contact__ = "ptitiano@baylibre.com"
 __maintainer__ = "Patrick Titiano"
 __status__ = "Development"
@@ -91,7 +91,7 @@ def exit_with_error(err):
     exit(err)
 
 
-class iioDeviceCaptureThread(threading.Thread):
+class IIODeviceCaptureThread(threading.Thread):
     """ IIO ACME Capture thread
 
     This class is used to abstract the capture of multiple channels of a single
@@ -99,7 +99,7 @@ class iioDeviceCaptureThread(threading.Thread):
 
     """
     def __init__(self, cape, slot, channels, bufsize, duration, verbose_level):
-        """ Initialise iioDeviceCaptureThread class
+        """ Initialise IIODeviceCaptureThread class
 
         Args:
             slot (int): ACME cape slot
@@ -131,7 +131,8 @@ class iioDeviceCaptureThread(threading.Thread):
         self._verbose_level = verbose_level
         self._trace = MLTrace(verbose_level, "Thread Slot %u" % self._slot)
         self._trace.trace(
-            2, "Thread params: slot=%u channels=%s buffer size=%u duration=%us" % (
+            2,
+            "Thread params: slot=%u channels=%s buffer size=%u duration=%us" % (
                 self._slot, self._channels, self._bufsize, self._duration))
 
     def configure_capture(self):
@@ -343,6 +344,14 @@ class iioDeviceCaptureThread(threading.Thread):
         return self._samples
 
 def main():
+    """ Capture power measurements of selected ACME probe(s) over IIO link.
+
+    Refer to argparse code to learn about available commandline options.
+
+    Returns:
+        int: error code (0 in case of success, a negative value otherwise)
+
+    """
     err = -1
 
     # Print application header
@@ -352,17 +361,25 @@ def main():
     init(autoreset=True)
 
     # Parse user arguments
-    parser = argparse.ArgumentParser(description='TODO',
-                                     formatter_class=argparse.RawDescriptionHelpFormatter,
-                                     epilog='''
-    This tool captures min, max, and average values of selected power rails (voltage, current, power).
-    These power measurements are performed using Baylibre's ACME cape and probes, over the network using IIO lib.
-    Example usage:
-        ''' + sys.argv[0] + ''' --ip baylibre-acme.local --duration 5 -c 2 -n VDD_1,VDD_2
+    parser = argparse.ArgumentParser(
+        description='TODO',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=
+        '''This tool captures min, max, and average values of selected
+           power rails (voltage, current, power).
+           These power measurements are performed using Baylibre's
+           ACME cape and probes, over the network using IIO lib.
 
-    Note it is assumed that slots are populated from slot 1 and upwards, with no hole.''')
-    parser.add_argument('--ip', metavar='HOSTNAME', default='baylibre-acme.local',# add default hostname here
-                        help='ACME hostname (e.g. 192.168.1.2 or baylibre-acme.local)')
+           Example usage:
+           $ ''' + sys.argv[0] +
+        ''' --ip baylibre-acme.local --duration 5 -c 2 -n VDD_1,VDD_2
+
+           Note it is assumed that slots are populated from slot 1 and
+           upwards, with no hole.''')
+    parser.add_argument(
+        '--ip', metavar='HOSTNAME',
+        default='baylibre-acme.local',
+        help='ACME hostname (e.g. 192.168.1.2 or baylibre-acme.local)')
     parser.add_argument('--count', '-c', metavar='COUNT', type=int, default=8,
                         help='Number of power rails to capture (> 0))')
     parser.add_argument('--names', '-n', metavar='LABELS',
@@ -374,11 +391,13 @@ def main():
                         default=10, help='Capture duration in seconds (> 0)')
     parser.add_argument('--bufsize', '-b', metavar='BUFFER SIZE', type=int,
                         default=127, help='Capture duration in seconds (> 0)')
-    parser.add_argument('--outdir', '-od', metavar='OUTPUT DIRECTORY',
-                        default=None,
-                        help='''Output directory (default: $HOME/pyacmecapture/''')
-    parser.add_argument('--out', '-o', metavar='OUTPUT FILE', default=None,
-                        help='''Output file name (default: date (yyyymmdd-hhmmss''')
+    parser.add_argument(
+        '--outdir', '-od', metavar='OUTPUT DIRECTORY',
+        default=None,
+        help='''Output directory (default: $HOME/pyacmecapture/''')
+    parser.add_argument(
+        '--out', '-o', metavar='OUTPUT FILE', default=None,
+        help='''Output file name (default: date (yyyymmdd-hhmmss''')
     parser.add_argument('--verbose', '-v', action='count',
                         help='print debug traces (various levels v, vv, vvv)')
 
@@ -396,8 +415,8 @@ def main():
 
     # Check arguments are valid
     try:
-        assert (args.count <= max_rail_count)
-        assert (args.count > 0)
+        assert args.count <= max_rail_count
+        assert args.count > 0
     except:
         log(Fore.RED, "FAILED", "Check user argument ('count')")
         exit_with_error(err)
@@ -406,13 +425,13 @@ def main():
         if args.names is not None:
             args.names = args.names.split(',')
             trace.trace(2, "args.names: %s" % args.names)
-            assert (args.count == len(args.names))
+            assert args.count == len(args.names)
     except:
         log(Fore.RED, "FAILED", "Check user argument ('names')")
         exit_with_error(err)
 
     try:
-        assert (args.duration > 0)
+        assert args.duration > 0
     except:
         log(Fore.RED, "FAILED", "Check user argument ('duration')")
         exit_with_error(err)
@@ -449,7 +468,7 @@ def main():
     err = err - 1
 
     # Init IIOAcmeCape instance
-    if (iio_acme_cape.init() != True):
+    if iio_acme_cape.init() != True:
         log(Fore.RED, "FAILED", "Init ACME IIO Context")
         exit_with_error(err)
     log(Fore.GREEN, "OK", "Init ACME Cape instance")
@@ -473,8 +492,9 @@ def main():
     failed = False
     for i in range(1, args.count + 1):
         try:
-            thread = iioDeviceCaptureThread(iio_acme_cape, i,
-                _CAPTURED_CHANNELS, args.bufsize, args.duration, args.verbose)
+            thread = IIODeviceCaptureThread(
+                iio_acme_cape, i, _CAPTURED_CHANNELS, args.bufsize,
+                args.duration, args.verbose)
             ret = thread.configure_capture()
         except:
             log(Fore.RED, "FAILED", "Configure capture thread for probe in slot #%u" % i)
@@ -503,7 +523,7 @@ def main():
         thread.join()
     log(Fore.GREEN, "OK", "Capture threads completed")
 
-    if args.verbose >=1:
+    if args.verbose >= 1:
         for thread in threads:
             thread.print_runtime_stats()
 
@@ -539,10 +559,11 @@ def main():
         sample_count = len(data[i]["Time"]["samples"])
         real_sampling_rate = sample_count / (real_capture_time_ms / 1000)
         trace.trace(1,
-            "Slot %u: real capture duration: %u ms (%u samples)" % (
-                slot, real_capture_time_ms, sample_count))
-        trace.trace(1, "Slot %u: real sampling rate: %u Hz" % (
-            slot, real_sampling_rate))
+                    "Slot %u: real capture duration: %u ms (%u samples)" % (
+                        slot, real_capture_time_ms, sample_count))
+        trace.trace(1,
+                    "Slot %u: real sampling rate: %u Hz" % (
+                        slot, real_sampling_rate))
 
         # Compute Power (P = Vbat * Ishunt)
         data[i]["Power"] = {}
