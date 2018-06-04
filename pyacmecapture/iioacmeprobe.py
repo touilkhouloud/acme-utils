@@ -1,12 +1,10 @@
 #!/usr/bin/env python
-""" Python ACME Capture Utility for NXP TPMP (Temperature-controlled Power Measurement Platform)
+""" Baylibre's ACME Probe Abstraction class.
 
-TBD description of the utility
+Baylibre's ACME Probe Abstraction class.
 
 Inspired by work done on the "iio-capture" tool done by:
     - Paul Cercueil <paul.cercueil@analog.com>,
-    - Marc Titinger <mtitinger@baylibre.com>,
-    - Fabrice Dreux <fdreux@baylibre.com>,
 and the work done on "pyacmegraph" tool done by:
     - Sebastien Jan <sjan@baylibre.com>.
 """
