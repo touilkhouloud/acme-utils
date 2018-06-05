@@ -384,11 +384,19 @@ def main():
         help='ACME hostname (e.g. 192.168.1.2 or baylibre-acme.local)')
     parser.add_argument('--count', '-c', metavar='COUNT', type=int, default=8,
                         help='Number of power rails to capture (> 0))')
-    parser.add_argument('--names', '-n', metavar='LABELS',
+    parser.add_argument('--slots', '-s', metavar='SLOTS', default=None,
+                        help='''List of ACME slot(s) to be captured
+                        (comma-separated list, without any whitespace,
+                        as labelled on the cape,
+                        starting from ACME Cape slot 1 and upwards,
+                        option '--count' ignored when '--slots' is used).
+                        E.g. 1,2,4,7''')
+    parser.add_argument('--names', '-n', metavar='LABELS', default=None,
                         help='''List of names for the captured power rails
-                        (comma separated list, one name per power rail,
-                        always start from ACME Cape slot 1).
-                        E.g. VDD_BAT,VDD_ARM,...''')
+                        (comma-separated list without any whitespace,
+                        one name per power rail,
+                        starting from ACME Cape slot 1 and upwards).
+                        E.g. VDD_BAT,VDD_ARM''')
     parser.add_argument('--duration', '-d', metavar='SEC', type=int,
                         default=10, help='Capture duration in seconds (> 0)')
     parser.add_argument('--bufsize', '-b', metavar='BUFFER SIZE', type=int,
@@ -421,6 +429,20 @@ def main():
         assert args.count > 0
     except:
         log(Fore.RED, "FAILED", "Check user argument ('count')")
+        exit_with_error(err)
+
+    try:
+        if args.slots is not None:
+            args.slots = args.slots.split(',')
+            for index, item in enumerate(args.slots):
+                args.slots[index] = int(item)
+                assert args.slots[index] <= max_rail_count
+                assert args.slots[index] > 0
+            args.count = len(args.slots)
+        else:
+            args.slots = range(1, args.count + 1)
+    except:
+        log(Fore.RED, "FAILED", "Check user argument ('slots')")
         exit_with_error(err)
 
     try:
@@ -478,7 +500,7 @@ def main():
 
     # Check all probes are attached
     failed = False
-    for i in range(1, args.count + 1):
+    for i in args.slots:
         attached = iio_acme_cape.probe_is_attached(i)
         if attached is not True:
             log(Fore.RED, "FAILED", "Detect probe in slot %u" % i)
@@ -492,7 +514,7 @@ def main():
     # Create and configure capture threads
     threads = []
     failed = False
-    for i in range(1, args.count + 1):
+    for i in args.slots:
         try:
             thread = IIODeviceCaptureThread(
                 iio_acme_cape, i, _CAPTURED_CHANNELS, args.bufsize,
@@ -533,14 +555,14 @@ def main():
     slot = 0
     data = []
     for thread in threads:
-        data.append(thread.get_samples())
-        trace.trace(3, "Slot %u captured data: %s" % (slot + 1, data[slot]))
-        slot = slot + 1
+        samples = thread.get_samples()
+        trace.trace(3, "Slot %u captured data: %s" % (samples['slot'], samples))
+        data.append(samples)
     log(Fore.GREEN, "OK", "Retrieve captured samples")
 
     # Process samples
     for i in range(args.count):
-        slot = i + 1
+        slot = data[i]['slot']
 
         # Make time samples relative to fist sample
         first_timestamp = data[i]["Time"]["samples"][0]
@@ -649,7 +671,7 @@ def main():
     for r in table['rows']:
         s = r.ljust(13)
         for i in range(args.count):
-            slot = i + 1
+            slot = data[i]['slot']
             if r is 'Slot':
                 if args.names is not None:
                     s += args.names[i].ljust(9)
@@ -670,7 +692,7 @@ def main():
 
     # Save Power Measurement trace to file (CSV format)
     for i in range(args.count):
-        slot = i + 1
+        slot = data[i]['slot']
         if args.out is None:
             trace_filename = now
         else:
