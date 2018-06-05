@@ -651,9 +651,9 @@ def main():
 
     table = {}
     table['rows'] = ['Slot', 'Shunt (mohm)',
-        'Voltage', ' Min (mV)', ' Max (mV)', ' Avg (mV)',
-        'Current', ' Min (mA)', ' Max (mA)', ' Avg (mA)',
-        'Power', ' Min (mW)', ' Max (mW)', ' Avg (mW)']
+                     'Voltage', ' Min (mV)', ' Max (mV)', ' Avg (mV)',
+                     'Current', ' Min (mA)', ' Max (mA)', ' Avg (mA)',
+                     'Power', ' Min (mW)', ' Max (mW)', ' Avg (mW)']
     table['data_keys'] = {}
     table['data_keys']['Voltage'] = None
     table['data_keys'][' Min (mV)'] = 'Vbat min'
@@ -672,12 +672,12 @@ def main():
         s = r.ljust(13)
         for i in range(args.count):
             slot = data[i]['slot']
-            if r is 'Slot':
+            if r == 'Slot':
                 if args.names is not None:
                     s += args.names[i].ljust(9)
                 else:
                     s += str(slot).ljust(9)
-            elif r is 'Shunt (mohm)':
+            elif r == 'Shunt (mohm)':
                 s += str(iio_acme_cape.get_shunt(slot) / 1000).ljust(9)
             elif table['data_keys'][r] is not None:
                 s += format(data[i][table['data_keys'][r]], '.1f').ljust(9)
