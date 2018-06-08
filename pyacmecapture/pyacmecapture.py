@@ -81,6 +81,7 @@ def exit_with_error(err):
         None
 
     """
+    print()
     if err != 0:
         log(Fore.RED,
             "FAILED", "Script execution terminated with error code %d." % err)
