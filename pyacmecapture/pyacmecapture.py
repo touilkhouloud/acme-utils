@@ -583,7 +583,7 @@ def main():
                                                  timestamp_diffs_avg))
         real_capture_time_ms = data[i]["Time"]["samples"][-1] / 1000000
         sample_count = len(data[i]["Time"]["samples"])
-        real_sampling_rate = sample_count / (real_capture_time_ms / 1000)
+        real_sampling_rate = sample_count / (real_capture_time_ms / 1000.0)
         trace.trace(1,
                     "Slot %u: real capture duration: %u ms (%u samples)" % (
                         slot, real_capture_time_ms, sample_count))
