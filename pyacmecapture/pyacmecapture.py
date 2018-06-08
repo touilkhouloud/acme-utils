@@ -481,6 +481,13 @@ def main():
         else:
             outdir = args.outdir
         trace.trace(1, "Output directory: %s" % outdir)
+
+        if args.out is None:
+            report_filename = os.path.join(outdir, now + "-report.txt")
+        else:
+            report_filename = os.path.join(outdir, args.out + "-report.txt")
+        trace.trace(1, "Report filename: %s" % report_filename)
+
         try:
             os.makedirs(outdir)
         except OSError as e:
@@ -644,7 +651,7 @@ def main():
 
     report = []
     report.append(
-        "---------------------------- Power Measurement Report -----------------------------")
+        "--------------------------- Power Measurement Report ---------------------------")
     report.append("Date: %s" % now)
     report.append("Pyacmecapture version: %s" % __version__)
     report.append("Captured Channels: %s" % _CAPTURED_CHANNELS)
@@ -667,37 +674,10 @@ def main():
             elif table['data_keys'][r] is not None:
                 s += format(data[i][table['data_keys'][r]], '.1f').ljust(9)
         report.append(s)
-    report.append(
-        "-----------------------------------------------------------------------------------")
 
-    # Display report
-    print()
-    for line in report:
-        print(line)
-    print()
-
-    # Save report to file
+    trace_filenames = []
     if args.nofile is False:
-        try:
-            if args.out is None:
-                summary_filename = os.path.join(outdir, now + "-report.txt")
-            else:
-                summary_filename = os.path.join(outdir, args.out + "-report.txt")
-
-            trace.trace(1, "Summary file: %s" % summary_filename)
-            of_summary = open(summary_filename, 'w')
-            for line in report:
-                print(line, file=of_summary)
-            of_summary.close()
-        except:
-            log(Fore.RED, "FAILED", "Create output summary file")
-            trace.trace(2, traceback.format_exc())
-            exit_with_error(err)
-        log(Fore.GREEN, "OK",
-            "Save Power Measurement results to '%s'." % summary_filename)
-
-    # Save Power Measurement trace to file (CSV format)
-    if args.nofile is False:
+        report.append("\nReport file: %s" % report_filename)
         for i in range(args.count):
             slot = data[i]['slot']
             if args.out is None:
@@ -711,9 +691,37 @@ def main():
                 trace_filename += "Slot_%u" % slot
             trace_filename += ".csv"
             trace_filename = os.path.join(outdir, trace_filename)
-            trace.trace(1, "Trace file: %s" % trace_filename)
+            if args.names is not None:
+                report.append("%s Trace file: %s" % (
+                    args.names[i], trace_filename))
+            else:
+                report.append("Slot %s Trace file: %s" % (
+                    slot, trace_filename))
+            trace_filenames.append(trace_filename)
+    report.append(
+        "--------------------------------------------------------------------------------")
+
+    # Save report to file
+    if args.nofile is False:
+        try:
+            of_report = open(report_filename, 'w')
+            for line in report:
+                print(line, file=of_report)
+            of_report.close()
+        except:
+            log(Fore.RED, "FAILED", "Save Power Measurement report")
+            trace.trace(2, traceback.format_exc())
+            exit_with_error(err)
+        log(Fore.GREEN, "OK",
+            "Save Power Measurement report")
+
+    # Save Power Measurement trace to file (CSV format)
+    if args.nofile is False:
+        for i in range(args.count):
+            slot = data[i]['slot']
+            trace.trace(1, "Trace file: %s" % trace_filenames[i])
             try:
-                of_trace = open(trace_filename, 'w')
+                of_trace = open(trace_filenames[i], 'w')
             except:
                 log(Fore.RED, "FAILED", "Create output trace file")
                 trace.trace(2, traceback.format_exc())
@@ -744,12 +752,15 @@ def main():
             of_trace.close()
             if args.names is not None:
                 log(Fore.GREEN, "OK",
-                    "Save %s Power Measurement Trace to '%s'." % (
-                        args.names[i], trace_filename))
+                    "Save %s Power Measurement Trace" % args.names[i])
             else:
                 log(Fore.GREEN, "OK",
-                    "Save Slot %u Power Measurement Trace to '%s'." % (
-                        slot, trace_filename))
+                    "Save Slot %u Power Measurement Trace" % slot)
+
+    # Display report
+    print()
+    for line in report:
+        print(line)
 
     # Done
     exit_with_error(0)
