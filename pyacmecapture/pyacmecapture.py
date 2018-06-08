@@ -275,50 +275,52 @@ class IIODeviceCaptureThread(threading.Thread):
         self._trace.trace(2, "Buffer Refill end times (ms): %s" % self._refill_end_times)
         # Print time spent refilling buffer
         self._trace.trace(2, "Buffer Refill duration (ms): %s" % refill_durations)
-        # Print buffer refill time stats
-        refill_durations_min = np.amin(refill_durations)
-        refill_durations_max = np.amax(refill_durations)
-        refill_durations_avg = np.average(refill_durations)
-        self._trace.trace(1, "Buffer Refill Duration (ms): min=%s max=%s avg=%s" % (
-            refill_durations_min,
-            refill_durations_max,
-            refill_durations_avg))
-        # Print delays between 2 consecutive buffer refills
-        refill_delays = np.ediff1d(self._refill_start_times)
-        self._trace.trace(2, "Delay between 2 Buffer Refill (ms): %s" % refill_delays)
-        # Print buffer refill delay stats
-        refill_delays_min = np.amin(refill_delays)
-        refill_delays_max = np.amax(refill_delays)
-        refill_delays_avg = np.average(refill_delays)
-        self._trace.trace(1, "Buffer Refill Delay (ms): min=%s max=%s avg=%s" % (
-            refill_delays_min,
-            refill_delays_max,
-            refill_delays_avg))
+        if len(self._refill_start_times) > 1:
+            # Print buffer refill time stats
+            refill_durations_min = np.amin(refill_durations)
+            refill_durations_max = np.amax(refill_durations)
+            refill_durations_avg = np.average(refill_durations)
+            self._trace.trace(1, "Buffer Refill Duration (ms): min=%s max=%s avg=%s" % (
+                refill_durations_min,
+                refill_durations_max,
+                refill_durations_avg))
+            # Print delays between 2 consecutive buffer refills
+            refill_delays = np.ediff1d(self._refill_start_times)
+            self._trace.trace(2, "Delay between 2 Buffer Refill (ms): %s" % refill_delays)
+            # Print buffer refill delay stats
+            refill_delays_min = np.amin(refill_delays)
+            refill_delays_max = np.amax(refill_delays)
+            refill_delays_avg = np.average(refill_delays)
+            self._trace.trace(1, "Buffer Refill Delay (ms): min=%s max=%s avg=%s" % (
+                refill_delays_min,
+                refill_delays_max,
+                refill_delays_avg))
 
         # Print time each time buffer was getting read
         self._trace.trace(2, "Buffer Read start times (ms): %s" % self._read_start_times)
         self._trace.trace(2, "Buffer Read end times (ms): %s" % self._read_end_times)
         # Print time spent reading buffer
         self._trace.trace(2, "Buffer Read duration (ms): %s" % read_durations)
-        # Print buffer read time stats
-        read_durations_min = np.amin(read_durations)
-        read_durations_max = np.amax(read_durations)
-        read_durations_avg = np.average(read_durations)
-        self._trace.trace(1, "Buffer Read Duration (ms): min=%s max=%s avg=%s" % (
-            read_durations_min,
-            read_durations_max,
-            read_durations_avg))
-        # Print delays between 2 consecutive buffer reads
-        read_delays = np.ediff1d(self._read_start_times)
-        self._trace.trace(2, "Delay between 2 Buffer Read (ms): %s" % read_delays)
-        # Print buffer read delay stats
-        read_delays_min = np.amin(read_delays)
-        read_delays_max = np.amax(read_delays)
-        read_delays_avg = np.average(read_delays)
-        self._trace.trace(1, "Buffer Read Delay (ms): min=%s max=%s avg=%s" % (
-            read_delays_min,
-            read_delays_max,
-            read_delays_avg))
+        if len(self._read_start_times) > 1:
+            # Print buffer read time stats
+            read_durations_min = np.amin(read_durations)
+            read_durations_max = np.amax(read_durations)
+            read_durations_avg = np.average(read_durations)
+            self._trace.trace(1, "Buffer Read Duration (ms): min=%s max=%s avg=%s" % (
+                read_durations_min,
+                read_durations_max,
+                read_durations_avg))
+            # Print delays between 2 consecutive buffer reads
+            read_delays = np.ediff1d(self._read_start_times)
+            self._trace.trace(2, "Delay between 2 Buffer Read (ms): %s" % read_delays)
+            # Print buffer read delay stats
+            read_delays_min = np.amin(read_delays)
+            read_delays_max = np.amax(read_delays)
+            read_delays_avg = np.average(read_delays)
+            self._trace.trace(1, "Buffer Read Delay (ms): min=%s max=%s avg=%s" % (
+                read_delays_min,
+                read_delays_max,
+                read_delays_avg))
         self._trace.trace(1, "------------------------------------------------")
 
     def get_samples(self):
