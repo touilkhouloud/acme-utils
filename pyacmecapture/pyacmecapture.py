@@ -37,7 +37,7 @@ from colorama import init, Fore, Style
 import numpy as np
 from mltrace import MLTrace
 from iioacmecape import IIOAcmeCape
-
+from iiofakeacmecape import IIOFakeAcmeCape
 
 __app_name__ = "Python ACME Power Capture Utility"
 __license__ = "MIT"
@@ -410,6 +410,10 @@ def main():
     parser.add_argument(
         '--out', '-o', metavar='OUTPUT FILE', default=None,
         help='''Output file name (default: date (yyyymmdd-hhmmss''')
+    parser.add_argument('--fake', '-f', action="store_true", default=False,
+                        help='''Use a fake cape (SW-simulated,
+                        no real HW access).
+                        Use for development purposes only.''')
     parser.add_argument('--verbose', '-v', action='count',
                         help='print debug traces (various levels v, vv, vvv)')
 
@@ -422,7 +426,10 @@ def main():
     err = err - 1
 
     # Create an IIOAcmeCape instance
-    iio_acme_cape = IIOAcmeCape(args.ip, args.verbose)
+    if args.fake is False:
+        iio_acme_cape = IIOAcmeCape(args.ip, args.verbose)
+    else:
+        iio_acme_cape = IIOFakeAcmeCape(args.ip, args.verbose)
     max_rail_count = iio_acme_cape.get_slot_count()
 
     # Check arguments are valid
