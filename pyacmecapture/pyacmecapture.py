@@ -54,6 +54,8 @@ __deprecated__ = False
 _OVERSAMPLING_RATIO = 1
 _ASYNCHRONOUS_READS = False
 _CAPTURED_CHANNELS = ["Time", "Vbat", "Ishunt"]
+_REPORT_1ST_COL_WIDTH = 13
+_REPORT_COLS_WIDTH_MIN = 9
 
 
 def log(color, flag, msg):
@@ -660,19 +662,30 @@ def main():
     report.append("Power Rails: %u" % args.count)
     report.append("Duration: %us\n" % args.duration)
 
+    # Adjust column width with name
+    cols_width = []
+    for i in range(args.count):
+        if args.names is not None:
+            cols_width.append(max(
+                _REPORT_COLS_WIDTH_MIN, 2 + len(args.names[i])))
+        else:
+            cols_width.append(_REPORT_COLS_WIDTH_MIN)
+
     for r in table['rows']:
-        s = r.ljust(13)
+        s = r.ljust(_REPORT_1ST_COL_WIDTH)
         for i in range(args.count):
             slot = data[i]['slot']
             if r == 'Slot':
                 if args.names is not None:
-                    s += args.names[i].ljust(9)
+                    s += args.names[i].ljust(cols_width[i])
                 else:
-                    s += str(slot).ljust(9)
+                    s += str(slot).ljust(cols_width[i])
             elif r == 'Shunt (mohm)':
-                s += str(iio_acme_cape.get_shunt(slot) / 1000).ljust(9)
+                s += str(iio_acme_cape.get_shunt(slot) / 1000).ljust(
+                    cols_width[i])
             elif table['data_keys'][r] is not None:
-                s += format(data[i][table['data_keys'][r]], '.1f').ljust(9)
+                s += format(data[i][table['data_keys'][r]], '.1f').ljust(
+                    cols_width[i])
         report.append(s)
 
     trace_filenames = []
