@@ -55,8 +55,8 @@ _OVERSAMPLING_RATIO = 1
 _ASYNCHRONOUS_READS = False
 _CAPTURED_CHANNELS = ["Time", "Vbat", "Ishunt"]
 _REPORT_1ST_COL_WIDTH = 13
-_REPORT_COLS_WIDTH_MIN = 9
-
+_REPORT_COLS_WIDTH_MIN = 7
+_REPORT_COL_PAD = 2
 
 def log(color, flag, msg):
     """ Format messages as follow: "['color'ed 'flag'] 'msg'"
@@ -632,6 +632,7 @@ def main():
     log(Fore.GREEN, "OK", "Process samples")
 
     # Generate report
+    # Use a dictionary to map table cells with data elements
     table = {}
     table['rows'] = ['Slot', 'Shunt (mohm)',
                      'Voltage', ' Min (mV)', ' Max (mV)', ' Avg (mV)',
@@ -652,8 +653,7 @@ def main():
     table['data_keys'][' Avg (mW)'] = 'Power avg'
 
     report = []
-    report.append(
-        "--------------------------- Power Measurement Report ---------------------------")
+    # Add misc details to report header
     report.append("Date: %s" % now)
     report.append("Pyacmecapture version: %s" % __version__)
     report.append("Captured Channels: %s" % _CAPTURED_CHANNELS)
@@ -662,32 +662,34 @@ def main():
     report.append("Power Rails: %u" % args.count)
     report.append("Duration: %us\n" % args.duration)
 
-    # Adjust column width with name
+    # Adjust column width with name so that it's never truncated
     cols_width = []
     for i in range(args.count):
         if args.names is not None:
-            cols_width.append(max(
-                _REPORT_COLS_WIDTH_MIN, 2 + len(args.names[i])))
+            cols_width.append(_REPORT_COL_PAD + max(
+                _REPORT_COLS_WIDTH_MIN, len(args.names[i])))
         else:
-            cols_width.append(_REPORT_COLS_WIDTH_MIN)
+            cols_width.append(_REPORT_COL_PAD + _REPORT_COLS_WIDTH_MIN)
 
+    # Generate report
     for r in table['rows']:
         s = r.ljust(_REPORT_1ST_COL_WIDTH)
         for i in range(args.count):
             slot = data[i]['slot']
             if r == 'Slot':
                 if args.names is not None:
-                    s += args.names[i].ljust(cols_width[i])
+                    s += args.names[i].rjust(cols_width[i])
                 else:
-                    s += str(slot).ljust(cols_width[i])
+                    s += str(slot).rjust(cols_width[i])
             elif r == 'Shunt (mohm)':
-                s += str(iio_acme_cape.get_shunt(slot) / 1000).ljust(
+                s += str(iio_acme_cape.get_shunt(slot) / 1000).rjust(
                     cols_width[i])
             elif table['data_keys'][r] is not None:
-                s += format(data[i][table['data_keys'][r]], '.1f').ljust(
+                s += format(data[i][table['data_keys'][r]], '.1f').rjust(
                     cols_width[i])
         report.append(s)
 
+    # Add output filenames to report
     trace_filenames = []
     if args.nofile is False:
         report.append("\nReport file: %s" % report_filename)
@@ -711,8 +713,21 @@ def main():
                 report.append("Slot %s Trace file: %s" % (
                     slot, trace_filename))
             trace_filenames.append(trace_filename)
-    report.append(
-        "--------------------------------------------------------------------------------")
+    report_max_length = len(max(report, key=len))
+    dash_count = (report_max_length - len(" Power Measurement Report ")) / 2
+
+    # Add dashlines at beginning and end of report
+    if report_max_length % 2 == 0:
+        report.insert(0,
+                      "-" * dash_count +
+                      " Power Measurement Report " +
+                      "-" * dash_count)
+    else:
+        report.insert(0,
+                      "-" * dash_count +
+                      " Power Measurement Report " +
+                      "-" * (dash_count + 1))
+    report.append("-" * report_max_length)
 
     # Save report to file
     if args.nofile is False:
