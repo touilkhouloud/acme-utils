@@ -47,7 +47,7 @@ __email__ = "ptitiano@baylibre.com"
 __contact__ = "ptitiano@baylibre.com"
 __maintainer__ = "Patrick Titiano"
 __status__ = "Development"
-__version__ = "0.1"
+__version__ = "0.2"
 __deprecated__ = False
 
 
