@@ -757,13 +757,13 @@ def main():
 
             # Format trace header (name columns)
             if args.names is not None:
-                s = "Time (%s),%s Voltage (%s),%s Current (%s),%s Power (%s)" % (
+                s = "Time (%s), %s Voltage (%s), %s Current (%s), %s Power (%s)" % (
                     data[i]["Time"]["unit"],
                     args.names[i], data[i]["Vbat"]["unit"],
                     args.names[i], data[i]["Ishunt"]["unit"],
                     args.names[i], data[i]["Power"]["unit"])
             else:
-                s = "Time (%s),Slot %u Voltage (%s),Slot %u Current (%s),Slot %u Power (%s)" % (
+                s = "Time (%s), Slot %u Voltage (%s), Slot %u Current (%s), Slot %u Power (%s)" % (
                     data[i]["Time"]["unit"],
                     slot, data[i]["Vbat"]["unit"],
                     slot, data[i]["Ishunt"]["unit"],
@@ -771,7 +771,7 @@ def main():
             print(s, file=of_trace)
             # Save samples in trace file
             for j in range(len(data[i]["Ishunt"]["samples"])):
-                s = "%s,%s,%s,%s" % (
+                s = "%s, %s, %s, %s" % (
                     data[i]["Time"]["samples"][j],
                     data[i]["Vbat"]["samples"][j],
                     data[i]["Ishunt"]["samples"][j],
