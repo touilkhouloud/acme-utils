@@ -29,6 +29,9 @@ from __future__ import print_function
 import traceback
 import sys
 import os
+from time import time, sleep
+import signal
+import logging
 import argparse
 import threading
 from time import time, localtime, strftime
@@ -130,6 +133,11 @@ class IIODeviceCaptureThread(threading.Thread):
         self._refill_end_times = None
         self._read_start_times = None
         self._read_end_times = None
+        self.shutdown_flag = threading.Event()
+        self.shutdown_flag.clear()
+        self.id = threading.Thread.getName(self)
+
+
         self._failed = None
         self._samples = None
         self._verbose_level = verbose_level
@@ -203,8 +211,9 @@ class IIODeviceCaptureThread(threading.Thread):
 
         self._timestamp_thread_start = time()
         elapsed_time = 0
-        while elapsed_time < self._duration:
+        while elapsed_time < self._duration and not (self.shutdown_flag.is_set()):
             # Capture samples
+            logging.debug("%s:" %(self.id))
             self._refill_start_times.append(time())
             ret = self._cape.refill_capture_buffer(self._slot)
             self._refill_end_times.append(time())
@@ -349,6 +358,20 @@ class IIODeviceCaptureThread(threading.Thread):
         """
         return self._samples
 
+class ServiceExit(Exception):
+    """
+    Custom exception which is used to trigger the clean exit
+    of all running threads and the main program.
+    """
+    pass
+
+def service_shutdown(signum, frame):
+    logging.debug('Caught signal %d' % signum)
+    threads = threading.enumerate()
+    for thread in threads:
+        logging.debug("%s: set event" %(threading.Thread.getName(thread)))
+    raise ServiceExit
+
 def main():
     """ Capture power measurements of selected ACME probe(s) over IIO link.
 
@@ -365,6 +388,9 @@ def main():
 
     # Colorama: reset style to default after each call to print
     init(autoreset=True)
+
+    signal.signal(signal.SIGTERM, service_shutdown)
+    signal.signal(signal.SIGINT, service_shutdown)
 
     # Parse user arguments
     parser = argparse.ArgumentParser(
@@ -475,6 +501,9 @@ def main():
     err = err - 1
     log(Fore.GREEN, "OK", "Check user arguments")
 
+    logging.basicConfig(format="%(levelname)s:%(process)6d: %(message)s", level=logging.DEBUG, filemode='w', filename="thread-test.log")
+    logging.debug("main start")
+
     # Create output directory (if doesn't exist)
     now = strftime("%Y%m%d-%H%M%S", localtime())
     if args.nofile is False:
@@ -555,7 +584,16 @@ def main():
     # Start capture threads
     try:
         for thread in threads:
-            thread.start()
+            if not thread.is_alive():
+                thread.start()
+        i = 0
+        while i < 5:
+            sleep(1)
+            i +=1
+    except ServiceExit:
+        for thread in threads:
+            thread.shutdown_flag.set()
+            thread.join()
     except:
         log(Fore.RED, "FAILED", "Start capture")
         trace.trace(2, traceback.format_exc())
@@ -564,6 +602,7 @@ def main():
     err = err - 1
 
     # Wait for capture threads to complete
+
     for thread in threads:
         thread.join()
     log(Fore.GREEN, "OK", "Capture threads completed")
