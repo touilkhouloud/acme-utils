@@ -29,6 +29,7 @@ from __future__ import print_function
 import traceback
 import sys
 import os
+import logging
 import argparse
 import threading
 from time import time, localtime, strftime
@@ -85,13 +86,17 @@ def exit_with_error(err):
     """
     print()
     if err != 0:
-        log(Fore.RED,
-            "FAILED", "Script execution terminated with error code %d." % err)
+        #log(Fore.RED,
+           # "FAILED", "Script execution terminated with error code %d." % err)
+        logging.error("%s: FAILED, Script execution terminated with error code" % err)
     else:
-        log(Fore.GREEN,
-            "SUCCESS", "Script execution completed with success.")
-    print("\n< There will be a 'Segmentation fault (core dumped)' error message after this one. >")
-    print("< This is a kwown bug. Please ignore it. >\n")
+        logging.info("SUCCESS, Script execution completed with success.")
+        #log(Fore.GREEN,
+            #"SUCCESS", "Script execution completed with success.")
+    logging.debug("There will be a 'Segmentation fault (core dumped)' error message after this one.")
+    logging.debug("This is a kwown bug. Please ignore it.")
+    #print("\n< There will be a 'Segmentation fault (core dumped)' error message after this one. >")
+    #print("< This is a kwown bug. Please ignore it. >\n")
     exit(err)
 
 
@@ -362,6 +367,8 @@ def main():
 
     # Print application header
     print(__app_name__ + " (version " + __version__ + ")\n")
+    logging.basicConfig(format="%(levelname)s:%(process)6d: %(message)s", level=logging.DEBUG, filemode='w', filename="pyacmecapture.log")
+    logging.info("main start")
 
     # Colorama: reset style to default after each call to print
     init(autoreset=True)
@@ -422,8 +429,7 @@ def main():
                         help='print debug traces (various levels v, vv, vvv)')
 
     args = parser.parse_args()
-    log(Fore.GREEN, "OK", "Parse user arguments")
-
+    logging.info("OK, Parse user arguments.")
     # Use MLTrace to log execution details
     trace = MLTrace(args.verbose)
     trace.trace(2, "User args: " + str(args)[10:-1])
@@ -441,7 +447,7 @@ def main():
         assert args.count <= max_rail_count
         assert args.count > 0
     except:
-        log(Fore.RED, "FAILED", "Check user argument ('count')")
+        logging.error("FAILED, Check user argument ('count')")
         exit_with_error(err)
 
     try:
@@ -455,7 +461,7 @@ def main():
         else:
             args.slots = range(1, args.count + 1)
     except:
-        log(Fore.RED, "FAILED", "Check user argument ('slots')")
+        logging.error("FAILED, Check user argument ('slots')")
         exit_with_error(err)
 
     try:
@@ -464,16 +470,16 @@ def main():
             trace.trace(2, "args.names: %s" % args.names)
             assert args.count == len(args.names)
     except:
-        log(Fore.RED, "FAILED", "Check user argument ('names')")
+        logging.error("FAILED, Check user argument ('names')")
         exit_with_error(err)
 
     try:
         assert args.duration > 0
     except:
-        log(Fore.RED, "FAILED", "Check user argument ('duration')")
+        logging.error("FAILED, Check user argument ('duration')")
         exit_with_error(err)
     err = err - 1
-    log(Fore.GREEN, "OK", "Check user arguments")
+    logging.info("OK, Check user arguments")
 
     # Create output directory (if doesn't exist)
     now = strftime("%Y%m%d-%H%M%S", localtime())
@@ -496,27 +502,27 @@ def main():
             if e.errno == os.errno.EEXIST:
                 trace.trace(1, "Directory '%s' already exists." % outdir)
             else:
-                log(Fore.RED, "FAILED", "Create output directory")
+                logging.error("FAILED: Create output directory")
                 trace.trace(2, traceback.format_exc())
                 exit_with_error(err)
         except:
-            log(Fore.RED, "FAILED", "Create output directory")
+            logging.error("FAILED: Create output directory")
             trace.trace(2, traceback.format_exc())
             exit_with_error(err)
-        log(Fore.GREEN, "OK", "Create output directory")
+        logging.info("OK: Create output directory")
 
     # Check ACME Cape is reachable
     if iio_acme_cape.is_up() != True:
-        log(Fore.RED, "FAILED", "Ping ACME")
+        logging.error("FAILED: Ping ACME")
         exit_with_error(err)
-    log(Fore.GREEN, "OK", "Ping ACME")
+    logging.info("OK: Ping ACME")
     err = err - 1
 
     # Init IIOAcmeCape instance
     if iio_acme_cape.init() != True:
-        log(Fore.RED, "FAILED", "Init ACME IIO Context")
+        logging.error("FAILED: Init ACME IIO Context")
         exit_with_error(err)
-    log(Fore.GREEN, "OK", "Init ACME Cape instance")
+    logging.info("OK: Init ACME Cape instance")
     err = err - 1
 
     # Check all probes are attached
@@ -524,10 +530,10 @@ def main():
     for i in args.slots:
         attached = iio_acme_cape.probe_is_attached(i)
         if attached is not True:
-            log(Fore.RED, "FAILED", "Detect probe in slot %u" % i)
+            logging.error("FAILED: Detect probe in slot %u" % i)
             failed = True
         else:
-            log(Fore.GREEN, "OK", "Detect probe in slot %u" % i)
+            logging.info("OK: Detect probe in slot %u" % i)
     if failed is True:
         exit_with_error(err)
     err = err - 1
@@ -542,14 +548,14 @@ def main():
                 args.duration, args.verbose)
             ret = thread.configure_capture()
         except:
-            log(Fore.RED, "FAILED", "Configure capture thread for probe in slot #%u" % i)
+            logging.error("FAILED: Configure capture thread for probe in slot #%u" % i)
             trace.trace(2, traceback.format_exc())
             exit_with_error(err)
         if ret is False:
-            log(Fore.RED, "FAILED", "Configure capture thread for probe in slot #%u" % i)
+            logging.error("FAILED: Configure capture thread for probe in slot #%u" % i)
             exit_with_error(err)
         threads.append(thread)
-        log(Fore.GREEN, "OK", "Configure capture thread for probe in slot #%u" % i)
+        logging.info("OK: Configure capture thread for probe in slot #%u" % i)
     err = err - 1
 
     # Start capture threads
@@ -557,16 +563,16 @@ def main():
         for thread in threads:
             thread.start()
     except:
-        log(Fore.RED, "FAILED", "Start capture")
+        logging.error("FAILED: Start capture")
         trace.trace(2, traceback.format_exc())
         exit_with_error(err)
-    log(Fore.GREEN, "OK", "Start capture")
+    logging.info("OK: Start capture")
     err = err - 1
 
     # Wait for capture threads to complete
     for thread in threads:
         thread.join()
-    log(Fore.GREEN, "OK", "Capture threads completed")
+    logging.info("OK: Capture threads completed")
 
     if args.verbose >= 1:
         for thread in threads:
@@ -579,7 +585,7 @@ def main():
         samples = thread.get_samples()
         trace.trace(3, "Slot %u captured data: %s" % (samples['slot'], samples))
         data.append(samples)
-    log(Fore.GREEN, "OK", "Retrieve captured samples")
+    logging.info("OK: Retrieve captured samples")
 
     # Process samples
     for i in range(args.count):
@@ -629,7 +635,7 @@ def main():
         data[i]["Power min"] = np.amin(data[i]["Power"]["samples"])
         data[i]["Power max"] = np.amax(data[i]["Power"]["samples"])
         data[i]["Power avg"] = np.average(data[i]["Power"]["samples"])
-    log(Fore.GREEN, "OK", "Process samples")
+    logging.info("OK: Process samples")
 
     # Generate report
     # Use a dictionary to map table cells with data elements
@@ -737,11 +743,10 @@ def main():
                 print(line, file=of_report)
             of_report.close()
         except:
-            log(Fore.RED, "FAILED", "Save Power Measurement report")
+            logging.error("FAILED: Save Power Measurement report")
             trace.trace(2, traceback.format_exc())
             exit_with_error(err)
-        log(Fore.GREEN, "OK",
-            "Save Power Measurement report")
+        logging.info("OK: Save Power Measurement report")
 
     # Save Power Measurement trace to file (CSV format)
     if args.nofile is False:
@@ -751,7 +756,7 @@ def main():
             try:
                 of_trace = open(trace_filenames[i], 'w')
             except:
-                log(Fore.RED, "FAILED", "Create output trace file")
+                logging.error("FAILED: Create output trace file")
                 trace.trace(2, traceback.format_exc())
                 exit_with_error(err)
 
@@ -779,11 +784,9 @@ def main():
                 print(s, file=of_trace)
             of_trace.close()
             if args.names is not None:
-                log(Fore.GREEN, "OK",
-                    "Save %s Power Measurement Trace" % args.names[i])
+                logging.info("OK: Save %s Power Measurement Trace" % args.names[i])
             else:
-                log(Fore.GREEN, "OK",
-                    "Save Slot %u Power Measurement Trace" % slot)
+                logging.info("OK: Save Slot %u Power Measurement Trace" % slot)
 
     # Display report
     print()
